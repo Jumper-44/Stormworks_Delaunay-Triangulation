@@ -69,11 +69,6 @@ Point = function(x,y,z,id) return {
 -- Edge Class
 Edge = function(p1, p2) return {
     p1=p1; p2=p2;
-
-    same = function(self, otherEdge)
-        return (self.p1 == otherEdge.p1 and self.p2 == otherEdge.p2)
-        or (self.p1 == otherEdge.p2 and self.p2 == otherEdge.p1)
-    end
 } end
 
 -- Triangle Class
@@ -115,10 +110,16 @@ local Delaunay = function() return {
 
             for j = #edgeBuffer - 1, 1, -1 do
                 for k = #edgeBuffer, j + 1, -1 do
-                    if edgeBuffer[j] and edgeBuffer[k] and edgeBuffer[j]:same(edgeBuffer[k]) then
+
+                    if edgeBuffer[k] and
+                    ((edgeBuffer[j].p1 == edgeBuffer[k].p1 and edgeBuffer[j].p2 == edgeBuffer[k].p2)
+                    or (edgeBuffer[j].p1 == edgeBuffer[k].p2 and edgeBuffer[j].p2 == edgeBuffer[k].p1))
+
+                    then
                         table.remove(edgeBuffer, j)
                         table.remove(edgeBuffer, k-1)
                     end
+
                 end
             end
 
@@ -128,7 +129,7 @@ local Delaunay = function() return {
             end
         end
 
-        self.n_vertices = #self.vertices
+        self.n_vertices = end_pos
     end;
 
     CalcMesh = function(self) -- The step to remove the triangles which shares a vertex with the Supertriangle
@@ -180,4 +181,6 @@ function onDraw()
     for i = 1, #delaunayController.vertices do
         screen.drawText(delaunayController.vertices[i].x-1, delaunayController.vertices[i].y-4, '.')
     end
+
+    screen.drawText(0,0,#triangles)
 end
