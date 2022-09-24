@@ -1,0 +1,52 @@
+{
+    "lifeboatapi.stormworks.isMicrocontrollerProject": true,
+    "lifeboatapi.stormworks.isAddonProject": false,
+    "Lua.diagnostics.disable": [
+        "lowercase-global",
+        "undefined-doc-name"
+    ],
+    "Lua.diagnostics.globals": [
+        "__simulator",
+        "print",
+        "simulator",
+        "screen"
+    ],
+    "Lua.runtime.version": "Lua 5.3",
+    "Lua.runtime.builtin": {
+        "coroutine": "enable",
+        "bit32": "enable",
+        "bit": "enable",
+        "builtin": "enable",
+        "utf8": "enable",
+        "package": "enable",
+        "os": "enable",
+        "jit": "enable",
+        "io": "enable",
+        "ffi": "enable",
+        "debug": "enable",
+        "basic": "enable"
+    },
+    "Lua.workspace.ignoreDir": [
+        ".vscode",
+        "/_build/",
+        "!/_build/libs/",
+        "!/_build/_buildactions.lua"
+    ],
+    "Lua.runtime.path": [
+        "?.lua",
+        "?/init.lua"
+    ],
+    "Lua.runtime.pathStrict": true,
+    "Lua.workspace.library": [
+        "c:/Users/emilk/OneDrive/Dokumenter/VS Code Projects/Stormworks/Delaunay Triangulation/",
+        "c:/Users/emilk/.vscode/extensions/nameouschangey.lifeboatapi-0.0.32/assets/lua/Common/",
+        "c:/Users/emilk/.vscode/extensions/nameouschangey.lifeboatapi-0.0.32/assets/lua/Microcontroller/",
+        "c:/Users/emilk/OneDrive/Dokumenter/VS Code Projects/Stormworks/Delaunay Triangulation/_build/libs/"
+    ],
+    "lifeboatapi.stormworks.libs.gitLibraries": [
+        {
+            "name": "LifeBoatAPI",
+            "gitUrl": "https://github.com/nameouschangey/Stormworks_LifeBoatAPI_MC.git"
+        }
+    ]
+}
