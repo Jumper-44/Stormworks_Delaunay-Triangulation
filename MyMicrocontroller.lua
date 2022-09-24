@@ -63,19 +63,14 @@ end
 
 -- Point Class
 Point = function(x,y,z,id) return {
-    x=x; y=y, z=z or 0; id=id or 0;
-} end
-
--- Edge Class
-Edge = function(p1, p2) return {
-    p1=p1; p2=p2;
+    x=x; y=y, z=z or 0; id=id or 0
 } end
 
 -- Triangle Class
 Triangle = function(p1,p2,p3) return {
     v1=p1; v2=p2; v3=p3;
 
-    circle = GetCircumCircle(p1,p2,p3);
+    circle = GetCircumCircle(p1,p2,p3)
 } end
 
 local Delaunay = function() return {
@@ -101,9 +96,9 @@ local Delaunay = function() return {
                 currentTriangle.circle.y - currentVertex.y
 
                 if dx * dx + dy * dy <= currentTriangle.circle.r then
-                    edgeBuffer[#edgeBuffer + 1] = Edge(currentTriangle.v1, currentTriangle.v2)
-                    edgeBuffer[#edgeBuffer + 1] = Edge(currentTriangle.v2, currentTriangle.v3)
-                    edgeBuffer[#edgeBuffer + 1] = Edge(currentTriangle.v3, currentTriangle.v1)
+                    edgeBuffer[#edgeBuffer + 1] = {p1=currentTriangle.v1, p2=currentTriangle.v2}
+                    edgeBuffer[#edgeBuffer + 1] = {p1=currentTriangle.v2, p2=currentTriangle.v3}
+                    edgeBuffer[#edgeBuffer + 1] = {p1=currentTriangle.v3, p2=currentTriangle.v1}
                     table.remove(self.triangles, j)
                 end
             end
