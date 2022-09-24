@@ -84,26 +84,19 @@ Triangle = function(p1,p2,p3) return {
 } end
 
 local Delaunay = function() return {
-
-    pointBuffer = {}; -- Add points to this and Triangulate() will handle it. Takes 'Point' class
     trianglesMesh = {}; --CalcMesh() will populate this
 
     vertices = {};
+    n_vertices = 0;
 
     triangles = { Triangle(Point(-9E5,-9E5), Point(9E5,-9E5), Point(0,9E5)) }; -- Supertriangle
 
     Triangulate = function(self)
-        local pre_vertices = #self.vertices
-        for i = 1, #self.pointBuffer do
-            local j = pre_vertices + i
-            self.vertices[j] = self.pointBuffer[i]
-            self.vertices[j].id = j
-        end
-        self.pointBuffer = {}
+        local end_pos = #self.vertices
 
-
-        for i = pre_vertices + 1, #self.vertices do
+        for i = end_pos-(end_pos - self.n_vertices) + 1, end_pos do
             local edgeBuffer, currentVertex = {}, self.vertices[i]
+            currentVertex.id = i
 
             for j = #self.triangles, 1, -1 do
                 local currentTriangle = self.triangles[j]
@@ -134,6 +127,8 @@ local Delaunay = function() return {
                 self.triangles[n + 1] = Triangle(edgeBuffer[j].p1, edgeBuffer[j].p2, self.vertices[i])
             end
         end
+
+        self.n_vertices = #self.vertices
     end;
 
     CalcMesh = function(self) -- The step to remove the triangles which shares a vertex with the Supertriangle
@@ -165,7 +160,7 @@ function onTick()
     press = input.getBool(1)
 
     if press and press ~= _press then
-        delaunayController.pointBuffer[1] = Point(x, y)
+        delaunayController.vertices[#delaunayController.vertices + 1] = Point(x, y)
         delaunayController:Triangulate()
         delaunayController:CalcMesh()
 
@@ -177,7 +172,6 @@ end
 
 function onDraw()
     for i=1, #triangles do
-    	screen.setColor(i*57%255, i*23%255, i*i%255)
         screen.drawTriangle(triangles[i].v1.x,triangles[i].v1.y, triangles[i].v2.x,triangles[i].v2.y, triangles[i].v3.x,triangles[i].v3.y)
     end
 
