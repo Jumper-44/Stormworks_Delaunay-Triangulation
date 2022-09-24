@@ -74,7 +74,6 @@ Edge = function(p1, p2) return {
         return (self.p1 == otherEdge.p1 and self.p2 == otherEdge.p2)
         or (self.p1 == otherEdge.p2 and self.p2 == otherEdge.p1)
     end
-
 } end
 
 -- Triangle Class
@@ -86,14 +85,14 @@ Triangle = function(p1,p2,p3) return {
 
 local Delaunay = function() return {
 
-    pointBuffer = {}; -- Add points to this and Triangulate() will handle it, tho crash if empty. Takes 'Point' class
+    pointBuffer = {}; -- Add points to this and Triangulate() will handle it. Takes 'Point' class
     trianglesMesh = {}; --CalcMesh() will populate this
 
     vertices = {};
 
     triangles = { Triangle(Point(-9E5,-9E5), Point(9E5,-9E5), Point(0,9E5)) }; -- Supertriangle
 
-    Triangulate = function(self) -- Will crash if pointBuffer is empty
+    Triangulate = function(self)
         local pre_vertices = #self.vertices
         for i = 1, #self.pointBuffer do
             local j = pre_vertices + i
@@ -140,19 +139,17 @@ local Delaunay = function() return {
     CalcMesh = function(self) -- The step to remove the triangles which shares a vertex with the Supertriangle
         self.trianglesMesh = {}
 
-        for i = #self.triangles, 2, -1 do
-            local triangle = {self.triangles[i].v1, self.triangles[i].v2, self.triangles[i].v3}
-
-            for j = 1, 3 do
-                if triangle[j].id == 0 then goto continue end
+        for i = 2, #self.triangles do
+            if not (
+                self.triangles[i].v1.id == 0 or
+                self.triangles[i].v2.id == 0 or
+                self.triangles[i].v3.id == 0 )
+            then
+                self.trianglesMesh[#self.trianglesMesh+1] =  self.triangles[i]
             end
-
-            self.trianglesMesh[#self.trianglesMesh+1] =  self.triangles[i]
-
-            ::continue::
         end
     end
-    
+
 } end
 --[[ Delaunay end ]]--
 
