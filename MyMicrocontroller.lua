@@ -144,68 +144,113 @@ local Delaunay = function() return {
 --[[ Delaunay end ]]--
 
 --[[ k-d tree start ]]--
-Dist2 = function(a,b)
-    local sum = 0
+dist2 = function(a,b)
+    local sum, dis = 0, 0
     for i = 1, #a do
-        local vec = a[i]-b[i]
-        sum = sum + vec*vec
+        dis = a[i]-b[i]
+        sum = sum + dis*dis
     end
     return sum
 end
 
-insertRecursive = function(root, point, depth, k)
-    if root.point == nil then
-        root.point = point
-        root.left = {}
-        root.right = {}
-        return
-    end
+closest = function(left, right, point)
+    if left == nil then return right end
+    if right == nil then return left end
 
-    local cd = depth % k + 1
+    local d1,d2 =
+    dist2(left.point, point),
+    dist2(right.point, point)
 
-    if point[cd] < root.point[cd] then
-        insertRecursive(root.left, point, depth + 1, k)
+    if (d1 < d2) then
+        return left, d1
     else
-        insertRecursive(root.right, point, depth + 1, k)
+        return right, d2
     end
 end
 
-KDTree = function(k) return { --https://www.geeksforgeeks.org/k-dimensional-tree/
+--https://youtu.be/Glp7THUpGow || https://bitbucket.org/StableSort/play/src/master/src/com/stablesort/kdtree/KDTree.java
+--https://www.geeksforgeeks.org/k-dimensional-tree/
+New_KDTree = function(k) return {
     k = k;
     tree = {};
 
     insert = function(self, point)
-        insertRecursive(self.tree, point, 0, self.k)
+        self:insertRecursive(self.tree, point, 0)
+    end;
+    insertRecursive = function(self, root, point, depth)
+        if root.point == nil then --Create node if nil
+            root.point = point
+            root.left = {}
+            root.right = {}
+            return
+        end
+
+        local cd = depth % self.k + 1
+
+        if point[cd] < root.point[cd] then
+            self:insertRecursive(root.left, point, depth + 1)
+        else
+            self:insertRecursive(root.right, point, depth + 1)
+        end
     end;
 
-    nearestNeighbor = function(self)
-
+    nearestNeighbor = function(self, point) -- Returns nearest node to point and distance squared
+        return self:nearestNeighborRecursive(self.tree, point, 0)
     end;
+    nearestNeighborRecursive = function(self, root, point, depth)
+        if root.point == nil then return nil end
+
+        local cd = depth % self.k + 1
+        if point[cd] < root.point[cd] then
+            nextBranch, ortherBranch = root.left, root.right
+        else
+            nextBranch, ortherBranch = root.right, root.left
+        end
+
+        local temp = self:nearestNeighborRecursive(nextBranch, point, depth+1)
+        local best = closest(temp, root, point)
+
+        local r2, dist, r2_ =
+        dist2(point, best.point),
+        point[cd] - root.point[cd],
+        nil
+
+        if r2 >= dist*dist then
+            temp = self:nearestNeighborRecursive(ortherBranch, point, depth+1)
+            best, r2_ = closest(temp, best, point)
+        end
+
+        return best, r2_ or r2
+    end
 } end
 --[[ k-d trees end ]]--
 
 
-tree = KDTree(2)
-tree:insert({50,50})
-tree:insert({40,40})
-tree:insert({70,20})
-
 
 delaunayController = Delaunay()
+tree = New_KDTree(2)
+minDist_squared = 20^2
+
 local triangles = {}
 
 _press = false
 
 function onTick()
-    x,y = input.getNumber(3),input.getNumber(4)
+    p = {input.getNumber(3), input.getNumber(4)}
     press = input.getBool(1)
 
     if press and press ~= _press then
-        delaunayController.vertices[#delaunayController.vertices + 1] = Point(x, y)
-        delaunayController:Triangulate()
-        delaunayController:CalcMesh()
+        node, dist_squared = tree:nearestNeighbor(p)
 
-        triangles = delaunayController.trianglesMesh
+        if node == nil or dist_squared > minDist_squared then
+            tree:insert(p)
+
+            delaunayController.vertices[#delaunayController.vertices + 1] = Point(p[1], p[2])
+            delaunayController:Triangulate()
+            delaunayController:CalcMesh()
+
+            triangles = delaunayController.trianglesMesh
+        end
     end
     _press = press
 end
