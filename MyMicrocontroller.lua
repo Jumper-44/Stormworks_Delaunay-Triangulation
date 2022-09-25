@@ -85,7 +85,7 @@ local Delaunay = function() return {
         local end_pos = #self.vertices
 
         for i = end_pos-(end_pos - self.n_vertices) + 1, end_pos do
-            local edgeBuffer, currentVertex = {}, self.vertices[i]
+            local edges, currentVertex = {}, self.vertices[i]
             currentVertex.id = i
 
             for j = #self.triangles, 1, -1 do
@@ -96,31 +96,30 @@ local Delaunay = function() return {
                 currentTriangle.circle.y - currentVertex.y
 
                 if dx * dx + dy * dy <= currentTriangle.circle.r then
-                    edgeBuffer[#edgeBuffer + 1] = {p1=currentTriangle.v1, p2=currentTriangle.v2}
-                    edgeBuffer[#edgeBuffer + 1] = {p1=currentTriangle.v2, p2=currentTriangle.v3}
-                    edgeBuffer[#edgeBuffer + 1] = {p1=currentTriangle.v3, p2=currentTriangle.v1}
+                    edges[#edges + 1] = {p1=currentTriangle.v1, p2=currentTriangle.v2}
+                    edges[#edges + 1] = {p1=currentTriangle.v2, p2=currentTriangle.v3}
+                    edges[#edges + 1] = {p1=currentTriangle.v3, p2=currentTriangle.v1}
                     table.remove(self.triangles, j)
                 end
             end
 
-            for j = #edgeBuffer - 1, 1, -1 do
-                for k = #edgeBuffer, j + 1, -1 do
+            for j = #edges - 1, 1, -1 do
+                for k = #edges, j + 1, -1 do
 
-                    if edgeBuffer[k] and
-                    ((edgeBuffer[j].p1 == edgeBuffer[k].p1 and edgeBuffer[j].p2 == edgeBuffer[k].p2)
-                    or (edgeBuffer[j].p1 == edgeBuffer[k].p2 and edgeBuffer[j].p2 == edgeBuffer[k].p1))
-
+                    if edges[j] and edges[k] and
+                    ((edges[j].p1 == edges[k].p1 and edges[j].p2 == edges[k].p2)
+                    or (edges[j].p1 == edges[k].p2 and edges[j].p2 == edges[k].p1))
                     then
-                        table.remove(edgeBuffer, j)
-                        table.remove(edgeBuffer, k-1)
+                        table.remove(edges, j)
+                        table.remove(edges, k-1)
                     end
 
                 end
             end
 
-            for j = 1, #edgeBuffer do
+            for j = 1, #edges do
                 local n = #self.triangles
-                self.triangles[n + 1] = Triangle(edgeBuffer[j].p1, edgeBuffer[j].p2, self.vertices[i])
+                self.triangles[n + 1] = Triangle(edges[j].p1, edges[j].p2, self.vertices[i])
             end
         end
 
@@ -144,6 +143,52 @@ local Delaunay = function() return {
 } end
 --[[ Delaunay end ]]--
 
+--[[ k-d tree start ]]--
+Dist2 = function(a,b)
+    local sum = 0
+    for i = 1, #a do
+        local vec = a[i]-b[i]
+        sum = sum + vec*vec
+    end
+    return sum
+end
+
+insertRecursive = function(root, point, depth, k)
+    if root.point == nil then
+        root.point = point
+        root.left = {}
+        root.right = {}
+        return
+    end
+
+    local cd = depth % k + 1
+
+    if point[cd] < root.point[cd] then
+        insertRecursive(root.left, point, depth + 1, k)
+    else
+        insertRecursive(root.right, point, depth + 1, k)
+    end
+end
+
+KDTree = function(k) return { --https://www.geeksforgeeks.org/k-dimensional-tree/
+    k = k;
+    tree = {};
+
+    insert = function(self, point)
+        insertRecursive(self.tree, point, 0, self.k)
+    end;
+
+    nearestNeighbor = function(self)
+
+    end;
+} end
+--[[ k-d trees end ]]--
+
+
+tree = KDTree(2)
+tree:insert({50,50})
+tree:insert({40,40})
+tree:insert({70,20})
 
 
 delaunayController = Delaunay()
