@@ -250,6 +250,10 @@ New_KDTree = function(k) return {
 --#endregion kdtree
 
 --#region Rendering
+w,h = 160,160
+cx,cy = w/2,h/2
+SCREEN = {centerX = cx, centerY = cy}
+
 WorldToScreen_Point = function(vertices, cameraTransform)
     local result = {}
 
@@ -275,11 +279,11 @@ end
 --#endregion Rendering
 
 
-cameraTransform_world = {}
+cameraTransform_world,p = {},{}
 delaunay = Delaunay()
 kdtree = New_KDTree(2)
 
-minDist_squared = 20^2 -- How dense can the point cloud be
+minDist_squared = 10^2 -- How dense can the point cloud be
 
 
 function onTick()
@@ -318,9 +322,12 @@ end
 function onDraw()
 
     if renderOn then
+        screen.setColor(0, 200, 0, 150)
 
         local transformed_vertices = WorldToScreen_Point(delaunay.vertices, cameraTransform_world)
         local triangles = delaunay.trianglesMesh
+
+        screen.drawText(0,150,"Triangles: "..#triangles)
 
         for i = 1, #triangles do
             local triangle = triangles[i]

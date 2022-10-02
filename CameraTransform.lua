@@ -167,9 +167,9 @@ aspectRatio=w/h
 function onTick()
     renderOn = input.getBool(1)
     output.setBool(1, renderOn)
-    output.setBool(2, input.getBool(2)) -- pass through scan clear
+    output.setBool(2, input.getBool(3)) -- pass through scan clear
 
-    for i = 11, 13 do output.setNumber(i, 0) end -- Clear laserPos output
+    for i = 17, 19 do output.setNumber(i, 0) end -- Clear laserPos output
 
     if renderOn then
         --#region cameraTransform_world
@@ -265,19 +265,30 @@ function onTick()
             laserDistance = laserDistance + 0.375
             local dis = math.cos((laserTiltSensor+1)*tau)*laserDistance
 
-            laserPos = {
+            laserPos = Vec3(
                 math.sin(-laserCompass*tau)*dis,
                 math.cos(-laserCompass*tau)*dis,
                 math.sin((laserTiltSensor+1)*tau)*laserDistance - 0.25
-            }
+            )
 
-            laserPos = Vec3( table.unpack( MatrixMul(rotationMatrixZXY, {{laserOFFSET.x, laserOFFSET.y, laserOFFSET.z}})[1])):add(gps):add(laserPos)
+            laserPos = Vec3( table.unpack( MatrixMul(rotationMatrixZXY, {{laserOFFSET:unpack(1)}})[1])):add(gps):add(laserPos)
 
-            output.setNumber(11, laserPos.x)
-            output.setNumber(12, laserPos.y)
-            output.setNumber(13, laserPos.z)
+            output.setNumber(17, laserPos.x)
+            output.setNumber(18, laserPos.y)
+            output.setNumber(19, laserPos.z)
         end
         --#endregion laserPos
     end
 
 end
+
+-- [[ debug
+laserPos = {}
+function onDraw()
+    screen.setColor(255,255,0)
+
+    screen.drawText(100,0, tostring(laserPos.x))
+    screen.drawText(100,10, tostring(laserPos.y))
+    screen.drawText(100,20, tostring(laserPos.z))
+end
+--]]
