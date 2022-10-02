@@ -282,7 +282,7 @@ function onTick()
 
 end
 
--- [[ debug
+--[[ debug
 laserPos = {}
 function onDraw()
     screen.setColor(255,255,0)
