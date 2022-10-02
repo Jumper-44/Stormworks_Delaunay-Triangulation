@@ -167,6 +167,7 @@ aspectRatio=w/h
 function onTick()
     renderOn = input.getBool(1)
     output.setBool(1, renderOn)
+    output.setBool(2, input.getBool(2)) -- pass through scan clear
 
     for i = 11, 13 do output.setNumber(i, 0) end -- Clear laserPos output
 

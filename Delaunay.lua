@@ -284,6 +284,10 @@ minDist_squared = 20^2 -- How dense can the point cloud be
 
 function onTick()
     renderOn = input.getBool(1)
+    if input.getBool(2) then -- Clear scan
+        delaunay = Delaunay()
+        kdtree = New_KDTree(2)
+    end
 
     if renderOn then
         --Get cameraTransform
