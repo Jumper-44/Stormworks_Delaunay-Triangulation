@@ -261,14 +261,14 @@ function onTick()
         --#region laserPos
         laserDistance, laserCompass, laserTiltSensor = getN(11,12,13)
 
-        if laserDistance > 0 and laserDistance < 4000 then
+        if laserDistance > 1 and laserDistance < 4000 then
             laserDistance = laserDistance + 0.375
             local dis = math.cos((laserTiltSensor+1)*tau)*laserDistance
 
             laserPos = Vec3(
                 math.sin(-laserCompass*tau)*dis,
                 math.cos(-laserCompass*tau)*dis,
-                math.sin((laserTiltSensor+1)*tau)*laserDistance - 0.25
+                math.sin((laserTiltSensor+1)*tau)*laserDistance
             )
 
             laserPos = Vec3( table.unpack( MatrixMul(rotationMatrixZXY, {{laserOFFSET:unpack(1)}})[1])):add(gps):add(laserPos)

@@ -291,6 +291,7 @@ function onTick()
     if input.getBool(2) then -- Clear scan
         delaunay = Delaunay()
         kdtree = New_KDTree(2)
+        triangles = nil
     end
 
     if renderOn then
@@ -312,34 +313,59 @@ function onTick()
                 delaunay.vertices[#delaunay.vertices + 1] = Point( table.unpack(p) )
                 delaunay:Triangulate()
                 delaunay:CalcMesh()
+
+
+                triangles = {{},{}}
+
+                for i = 1, #delaunay.trianglesMesh do
+                    local triangle = delaunay.trianglesMesh[i]
+                    local verticesUnderWater, set = 0, {triangle.v1.z, triangle.v2.z, triangle.v3.z}
+
+                    for j = 1, 3 do
+                        verticesUnderWater = verticesUnderWater + (set[j] < 0 and 1 or 0)
+                    end
+
+                    if verticesUnderWater > 1 then
+                        triangles[1][#triangles[1] + 1] = triangle
+                    else
+                        triangles[2][#triangles[2] + 1] = triangle
+                    end
+                end
+
             end
         end
     end
 
 end
 
+colorPalette = {{0,0,255,75},{0,100,0,75}} --water, ground 
 
 function onDraw()
 
-    if renderOn then
-        screen.setColor(0, 200, 0, 150)
+    if renderOn and triangles ~= nil then
 
         local transformed_vertices = WorldToScreen_Point(delaunay.vertices, cameraTransform_world)
-        local triangles = delaunay.trianglesMesh
+        local currentDrawnTriangles = 0
 
-        screen.drawText(0,150,"Triangles: "..#triangles)
+        for i = 1, #colorPalette do
+            screen.setColor( table.unpack(colorPalette[i]) )
 
-        for i = 1, #triangles do
-            local triangle = triangles[i]
-            local v1, v2, v3 =
-                transformed_vertices[triangle.v1.id],
-                transformed_vertices[triangle.v2.id],
-                transformed_vertices[triangle.v3.id]
+            for j = 1, #triangles[i] do
+                local triangle = triangles[i][j]
+                local v1, v2, v3 =
+                    transformed_vertices[triangle.v1.id],
+                    transformed_vertices[triangle.v2.id],
+                    transformed_vertices[triangle.v3.id]
 
-            if v1 and v2 and v3 then -- Only draws triangle if all vertices are in view
-                screen.drawTriangle(v1[1],v1[2], v2[1],v2[2], v3[1],v3[2])
+                if v1 and v2 and v3 then -- Only draws triangle if all vertices are in view
+                    screen.drawTriangle(v1[1],v1[2], v2[1],v2[2], v3[1],v3[2])
+                    currentDrawnTriangles = currentDrawnTriangles + 1
+                end
             end
         end
 
+        screen.setColor(255,255,255)
+        screen.drawText(0,140,"#Triangles: "..#delaunay.trianglesMesh)
+        screen.drawText(0,150,"#DrawTriangles: "..currentDrawnTriangles)
     end
 end
