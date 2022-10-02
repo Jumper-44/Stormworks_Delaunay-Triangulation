@@ -1,5 +1,65 @@
---https://pastebin.com/hkV8csW5
+-- Author: Jumper
+-- GitHub: https://github.com/Jumper-44
+-- Workshop: https://steamcommunity.com/profiles/76561198084249280/myworkshopfiles/
+--
+--- Developed using LifeBoatAPI - Stormworks Lua plugin for VSCode - https://code.visualstudio.com/download (search "Stormworks Lua with LifeboatAPI" extension)
+--- If you have any issues, please report them here: https://github.com/nameouschangey/STORMWORKS_VSCodeExtension/issues - by Nameous Changey
 
+
+--[====[ HOTKEYS ]====]
+-- Press F6 to simulate this file
+-- Press F7 to build the project, copy the output from /_build/out/ into the game to use
+-- Remember to set your Author name etc. in the settings: CTRL+COMMA
+
+
+--[====[ EDITABLE SIMULATOR CONFIG - *automatically removed from the F7 build output ]====]
+---@section __LB_SIMULATOR_ONLY__
+do
+    ---@type Simulator -- Set properties and screen sizes here - will run once when the script is loaded
+    simulator = simulator
+    simulator:setScreen(1, "3x3")
+    simulator:setProperty("ExampleNumberProperty", 123)
+
+    -- Runs every tick just before onTick; allows you to simulate the inputs changing
+    ---@param simulator Simulator Use simulator:<function>() to set inputs etc.
+    ---@param ticks     number Number of ticks since simulator started
+    function onLBSimulatorTick(simulator, ticks)
+
+        -- touchscreen defaults
+        local screenConnection = simulator:getTouchScreen(1)
+        simulator:setInputBool(1, screenConnection.isTouched)
+        simulator:setInputNumber(1, screenConnection.width)
+        simulator:setInputNumber(2, screenConnection.height)
+        simulator:setInputNumber(3, screenConnection.touchX)
+        simulator:setInputNumber(4, screenConnection.touchY)
+
+        -- NEW! button/slider options from the UI
+        simulator:setInputBool(31, simulator:getIsClicked(1))       -- if button 1 is clicked, provide an ON pulse for input.getBool(31)
+        simulator:setInputNumber(31, simulator:getSlider(1))        -- set input 31 to the value of slider 1
+
+        simulator:setInputBool(32, simulator:getIsToggled(2))       -- make button 2 a toggle, for input.getBool(32)
+        simulator:setInputNumber(32, simulator:getSlider(2) * 50)   -- set input 32 to the value from slider 2 * 50
+    end;
+end
+---@endsection
+
+
+--[====[ IN-GAME CODE ]====]
+
+
+
+
+
+--#region readme
+--[[
+Calculates the camera transform matrix for augmented reality
+Calculates the coordinates to the laser endpoint
+
+Sends the cameraTransform_world and laserPos to the next lua script (ingame)
+--]]
+--#endregion readme
+
+--#region Initialization
 ------------------------------------
 ---------{ Initialization }---------
 ------------------------------------
@@ -27,7 +87,7 @@ MatrixMul = function(m1,m2) --Assuming matrix multiplication is possible
     return r
 end
 
-MatrixTranspose = function(m) --Also used to copy identity matrix
+MatrixTranspose = function(m)
     local r = {}
     for i=1,#m[1] do
         r[i] = {}
@@ -36,28 +96,6 @@ MatrixTranspose = function(m) --Also used to copy identity matrix
         end
     end
     return r
-end
-
-WorldToScreen_Point = function(m, cameraTransform)
-    local result, n = {}, 1
-
-    for i=1, #m do
-        local x,y,z = m[i][1], m[i][2], m[i][3]
-
-        local X,Y,Z,W =
-        cameraTransform[1][1]*x + cameraTransform[2][1]*y + cameraTransform[3][1]*z + cameraTransform[4][1],
-        cameraTransform[1][2]*x + cameraTransform[2][2]*y + cameraTransform[3][2]*z + cameraTransform[4][2],
-        cameraTransform[1][3]*x + cameraTransform[2][3]*y + cameraTransform[3][3]*z + cameraTransform[4][3],
-        cameraTransform[1][4]*x + cameraTransform[2][4]*y + cameraTransform[3][4]*z + cameraTransform[4][4]
-
-        if (-W<=X and X<=W) and (-W<=Y and Y<=W) and (0<=Z and Z<=W) then --clip and discard points
-            W=1/W
-            result[n] = {X*W*cx+SCREEN.centerX, Y*W*cy+SCREEN.centerY, Z*W, i}
-            n = n+1
-        end -- x & y are screen coordinates, z is depth, the 4th is the index of the point
-    end
-
-    return result
 end
 
 --Vector3 Class
@@ -78,21 +116,19 @@ gps,offset = Vec3(),{}
 memory = {ang=Vec3(), gps=Vec3()}
 
 
---pre setup of some matrices. Matrices are written as m[column][row]
-identityMatrix4x4 = {
+translationMatrix_world = {
     {1,0,0,0},
     {0,1,0,0},
     {0,0,1,0},
     {0,0,0,1}
 }
 
-rotationMatrixZ = MatrixTranspose(identityMatrix4x4)
-translationMatrix_world = MatrixTranspose(identityMatrix4x4)
-translationMatrix_local = MatrixTranspose(identityMatrix4x4)
+
+laserOFFSET = Vec3(0, 4.75, -0.5)
 ------------------------------------
+--#endregion Initialization
 
-
-
+--#region Screen Configuration
 ------------------------------------
 ------{ Screen Configuration }------
 ------------------------------------
@@ -118,22 +154,26 @@ Example SCREEN of a 3x3 HUD:
 SCREEN={near=0.25, sizeX=0.7 ,sizeY=0.7, placementOffsetX=0, placementOffsetY=0.01, centerX=cx, centerY=cy}
 --]]
 
-offset.gps = Vec3(0,0,0) -- X:+Right, Y:+Foward, Z:+Up. Offset GPS to the block of the head.
+offset.gps = Vec3(0, 3.5, 0.5) -- X:+Right, Y:+Foward, Z:+Up. Offset GPS to the block of the head.
 offset.tick = 3 --It takes a few ticks from getting the newest data to presenting it, so predicting the future position by a few ticks helps with Vehicle GPS & Rotation.
 
-f=10000 --Render Distance.
+f=1E4 --Render Distance.
 
 aspectRatio=w/h
 ------------------------------------
-
+--#endregion Screen Configuration
 
 
 function onTick()
     renderOn = input.getBool(1)
+    output.setBool(1, renderOn)
+
+    for i = 11, 13 do output.setNumber(i, 0) end -- Clear laserPos output
 
     if renderOn then
+        --#region cameraTransform_world
         gps.x,gps.y,gps.z,z = getN(1,2,3,4)
-        gps.z=(gps.z+z)/2 --Averages two altimeters for precision, so it's in the same place as gps in all rotations.
+        gps.z=(gps.z+z)/2 --Averages two altimeters for precision, so it's in the same place as gps module in all rotations.
 
         isFemale = input.getBool(2) --Matters as height differs depending on sex.
 
@@ -154,16 +194,6 @@ function onTick()
         ang, memory.ang = ang:add( ang:sub(memory.ang):scale(offset.tick) ), ang
         --------------------------------------
 
-
-
-    end
-end
-
-
-
-function onDraw()
-
-    if renderOn then
 
         ------{ Player Head Position }------
         headAzimuthAng =    Clamp(lookX, -0.277, 0.277) * 0.408 * tau -- 0.408 is to make 100° to 40.8°
@@ -198,42 +228,55 @@ function onDraw()
         ------{ Rotation Matrix Setup }-----
         local sx,sy,sz, cx,cy,cz = math.sin(ang.x),math.sin(ang.y),math.sin(ang.z), math.cos(ang.x),math.cos(ang.y),math.cos(ang.z)
 
-        rotationMatrixXY = {
-            {cy,    sx*sy,      -cx*sy,     0},
-            {0,     cx,         sx,         0},
-            {sy,    -sx*cy,     cx*cy,      0},
-            {0,     0,          0,          1}
+        rotationMatrixZXY = {
+            {cz*cy-sz*sx*sy,    sz*cy+cz*sx*sy,     -cx*sy, 0},
+            {-sz*cx,            cz*cx,              sx,     0},
+            {cz*sy+sz*sx*cy,    sz*sy-cz*sx*cy,     cx*cy,  0},
+            {0,                 0,                  0,      1}
         }
-
-        rotationMatrixZ[1][1] = cz
-        rotationMatrixZ[2][2] = cz
-        rotationMatrixZ[1][2] = sz
-        rotationMatrixZ[2][1] = -sz
-
-        rotationMatrixZXY = MatrixMul(rotationMatrixZ, rotationMatrixXY)
         ------------------------------------
 
 
         ------{ Translation Matrix Setup }-----
-        translate_local = Vec3( table.unpack( MatrixMul(rotationMatrixZXY, {{offset.head:unpack(0)}})[1] ) )
         translate_world = Vec3( table.unpack( MatrixMul(rotationMatrixZXY, {{offset.gps:add(offset.head):unpack(0)}})[1] ) ):add(gps)
 
-        translationMatrix_local[4] = {Vec3():sub(translate_local):unpack(1)}
         translationMatrix_world[4] = {Vec3():sub(translate_world):unpack(1)}
-        ------------------------------------
+        ---------------------------------------
 
 
         ------{ Final Camera Transform Matrix }-----
-        cameraTransform_local = MatrixMul(perspectiveProjectionMatrix, MatrixMul(MatrixTranspose(rotationMatrixXY), translationMatrix_local))
-
         cameraTransform_world = MatrixMul(perspectiveProjectionMatrix, MatrixMul(MatrixTranspose(rotationMatrixZXY), translationMatrix_world))
         --------------------------------------------
 
-        --End of Camera setup, Start Drawing Under
 
+        --Output cameraTransform_world
+        for i=1, 4 do
+            for j=1, 4 do
+                output.setNumber((i-1)*4 + j, cameraTransform_world[i][j])
+            end
+        end
+        --#endregion cameraTransform_world
 
+        --#region laserPos
+        laserDistance, laserCompass, laserTiltSensor = getN(11,12,13)
 
+        if laserDistance > 0 and laserDistance < 4000 then
+            laserDistance = laserDistance + 0.375
+            local dis = math.cos((laserTiltSensor+1)*tau)*laserDistance
 
+            laserPos = {
+                math.sin(-laserCompass*tau)*dis,
+                math.cos(-laserCompass*tau)*dis,
+                math.sin((laserTiltSensor+1)*tau)*laserDistance - 0.25
+            }
+
+            laserPos = Vec3( table.unpack( MatrixMul(rotationMatrixZXY, {{laserOFFSET.x, laserOFFSET.y, laserOFFSET.z}})[1])):add(gps):add(laserPos)
+
+            output.setNumber(11, laserPos.x)
+            output.setNumber(12, laserPos.y)
+            output.setNumber(13, laserPos.z)
+        end
+        --#endregion laserPos
     end
 
 end

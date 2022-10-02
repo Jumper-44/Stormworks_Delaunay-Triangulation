@@ -1,9 +1,23 @@
+-- Author: Jumper
+-- GitHub: https://github.com/Jumper-44
+-- Workshop: https://steamcommunity.com/profiles/76561198084249280/myworkshopfiles/
+--
+--- Developed using LifeBoatAPI - Stormworks Lua plugin for VSCode - https://code.visualstudio.com/download (search "Stormworks Lua with LifeboatAPI" extension)
+--- If you have any issues, please report them here: https://github.com/nameouschangey/STORMWORKS_VSCodeExtension/issues - by Nameous Changey
+
+
+--[====[ HOTKEYS ]====]
+-- Press F6 to simulate this file
+-- Press F7 to build the project, copy the output from /_build/out/ into the game to use
+-- Remember to set your Author name etc. in the settings: CTRL+COMMA
+
+
 --[====[ EDITABLE SIMULATOR CONFIG - *automatically removed from the F7 build output ]====]
 ---@section __LB_SIMULATOR_ONLY__
 do
     ---@type Simulator -- Set properties and screen sizes here - will run once when the script is loaded
     simulator = simulator
-    simulator:setScreen(1, "9x5")
+    simulator:setScreen(1, "3x3")
     simulator:setProperty("ExampleNumberProperty", 123)
 
     -- Runs every tick just before onTick; allows you to simulate the inputs changing
@@ -32,27 +46,37 @@ end
 
 --[====[ IN-GAME CODE ]====]
 
--- try require("Folder.Filename") to include code from another file in this, so you can store code in libraries
--- the "LifeBoatAPI" is included by default in /_build/libs/ - you can use require("LifeBoatAPI") to get this, and use all the LifeBoatAPI.<functions>!
---require("JumperLib.Delaunay")
 
 
---[[ Delaunay start ]]--
+
+
+--#region readme
+--[[
+Recieves cameraTransform_world and laserPos from "CameraTransform.lua" script
+
+This does the delaunay triangulation and 3d render
+
+The triangulation is O(n*n) time complexity
+See the triangulation in browser with touchscreen https://lua.flaffipony.rocks/?id=IDyvZ6wC8P
+--]]
+--#endregion readme
+
+--#region Delaunay
 local GetCircumCircle = function(a,b,c)
     local dx_ab, dy_ab, dx_ac, dy_ac =
-    b.x - a.x,
-    b.y - a.y,
-    c.x - a.x,
-    c.y - a.y
+        b.x - a.x,
+        b.y - a.y,
+        c.x - a.x,
+        c.y - a.y
 
     local b_len_squared, c_len_squared, d =
-    dx_ab * dx_ab + dy_ab * dy_ab,
-    dx_ac * dx_ac + dy_ac * dy_ac,
-    0.5 / (dx_ab * dy_ac - dy_ab * dx_ac)
+        dx_ab * dx_ab + dy_ab * dy_ab,
+        dx_ac * dx_ac + dy_ac * dy_ac,
+        0.5 / (dx_ab * dy_ac - dy_ab * dx_ac)
 
     local dx,dy =
-    (dy_ac * b_len_squared - dy_ab * c_len_squared) * d,
-    (dx_ab * c_len_squared - dx_ac * b_len_squared) * d
+        (dy_ac * b_len_squared - dy_ab * c_len_squared) * d,
+        (dx_ab * c_len_squared - dx_ac * b_len_squared) * d
 
     return {
         x = a.x + dx,
@@ -92,8 +116,8 @@ local Delaunay = function() return {
                 local currentTriangle = self.triangles[j]
 
                 local dx,dy =
-                currentTriangle.circle.x - currentVertex.x,
-                currentTriangle.circle.y - currentVertex.y
+                    currentTriangle.circle.x - currentVertex.x,
+                    currentTriangle.circle.y - currentVertex.y
 
                 if dx * dx + dy * dy <= currentTriangle.circle.r then
                     edges[#edges + 1] = {p1=currentTriangle.v1, p2=currentTriangle.v2}
@@ -141,9 +165,9 @@ local Delaunay = function() return {
     end
 
 } end
---[[ Delaunay end ]]--
+--#endregion Delaunay
 
---[[ k-d tree start ]]--
+--#region kdtree
 dist2 = function(a,b)
     local sum, dis = 0, 0
     for i = 1, #a do
@@ -158,8 +182,8 @@ closest = function(left, right, point)
     if right == nil then return left end
 
     local d1,d2 =
-    dist2(left.point, point),
-    dist2(right.point, point)
+        dist2(left.point, point),
+        dist2(right.point, point)
 
     if (d1 < d2) then
         return left, d1
@@ -211,9 +235,9 @@ New_KDTree = function(k) return {
         local best = closest(temp, root, point)
 
         local r2, dist, r2_ =
-        dist2(point, best.point),
-        point[cd] - root.point[cd],
-        nil
+            dist2(point, best.point),
+            point[cd] - root.point[cd],
+            nil
 
         if r2 >= dist*dist then
             temp = self:nearestNeighborRecursive(ortherBranch, point, depth+1)
@@ -223,49 +247,88 @@ New_KDTree = function(k) return {
         return best, r2_ or r2
     end
 } end
---[[ k-d trees end ]]--
+--#endregion kdtree
 
+--#region Rendering
+WorldToScreen_Point = function(vertices, cameraTransform)
+    local result = {}
 
+    for i=1, #vertices do
+        local x,y,z = vertices[i].x, vertices[i].y, vertices[i].z
 
-delaunayController = Delaunay()
-tree = New_KDTree(2)
-minDist_squared = 20^2
+        local X,Y,Z,W =
+            cameraTransform[1]*x + cameraTransform[5]*y + cameraTransform[9]*z + cameraTransform[13],
+            cameraTransform[2]*x + cameraTransform[6]*y + cameraTransform[10]*z + cameraTransform[14],
+            cameraTransform[3]*x + cameraTransform[7]*y + cameraTransform[11]*z + cameraTransform[15],
+            cameraTransform[4]*x + cameraTransform[8]*y + cameraTransform[12]*z + cameraTransform[16]
 
-local triangles = {}
-
-_press = false
-
-function onTick()
-    p = {input.getNumber(3), input.getNumber(4)}
-    press = input.getBool(1)
-
-    if press and press ~= _press then
-        node, dist_squared = tree:nearestNeighbor(p)
-
-        if node == nil or dist_squared > minDist_squared then
-            tree:insert(p)
-
-            delaunayController.vertices[#delaunayController.vertices + 1] = Point(p[1], p[2])
-            delaunayController:Triangulate()
-            delaunayController:CalcMesh()
-
-            triangles = delaunayController.trianglesMesh
+        if (-W<=X and X<=W) and (-W<=Y and Y<=W) and (0<=Z and Z<=W) then --clip and discard points
+            W=1/W
+            result[#result+1] = {X*W*cx+SCREEN.centerX, Y*W*cy+SCREEN.centerY, Z*W, i}
+        else -- x & y are screen coordinates, z is depth, the 4th is the index of the point
+            result[#result+1] = false
         end
     end
-    _press = press
+
+    return result
+end
+--#endregion Rendering
+
+
+cameraTransform_world = {}
+delaunay = Delaunay()
+kdtree = New_KDTree(2)
+
+minDist_squared = 20^2 -- How dense can the point cloud be
+
+
+function onTick()
+    renderOn = input.getBool(1)
+
+    if renderOn then
+        --Get cameraTransform
+        for i = 1, 16 do
+            cameraTransform_world[i] = input.getNumber(i)
+        end
+
+        --Get point
+        p = {input.getNumber(17), input.getNumber(18), input.getNumber(19)}
+
+        --Try add point
+        if p[1] ~= 0 and p[2] ~= 0 then
+            node, dist_squared = kdtree:nearestNeighbor(p)
+
+            if node == nil or dist_squared > minDist_squared then
+                kdtree:insert(p)
+
+                delaunay.vertices[#delaunay.vertices + 1] = Point( table.unpack(p) )
+                delaunay:Triangulate()
+                delaunay:CalcMesh()
+            end
+        end
+    end
+
 end
 
 
 function onDraw()
-    for i=1, #triangles do
-        screen.drawTriangle(triangles[i].v1.x,triangles[i].v1.y, triangles[i].v2.x,triangles[i].v2.y, triangles[i].v3.x,triangles[i].v3.y)
+
+    if renderOn then
+
+        local transformed_vertices = WorldToScreen_Point(delaunay.vertices, cameraTransform_world)
+        local triangles = delaunay.trianglesMesh
+
+        for i = 1, #triangles do
+            local triangle = triangles[i]
+            local v1, v2, v3 =
+                transformed_vertices[triangle.v1.id],
+                transformed_vertices[triangle.v2.id],
+                transformed_vertices[triangle.v3.id]
+
+            if v1 and v2 and v3 then -- Only draws triangle if all vertices are in view
+                screen.drawTriangle(v1[1],v1[2], v2[1],v2[2], v3[1],v3[2])
+            end
+        end
+
     end
-
-    screen.setColor(255,255,255)
-
-    for i = 1, #delaunayController.vertices do
-        screen.drawText(delaunayController.vertices[i].x-1, delaunayController.vertices[i].y-4, '.')
-    end
-
-    screen.drawText(0,0,#triangles)
 end
