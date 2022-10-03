@@ -135,7 +135,7 @@ laserOFFSET = Vec3(0, 4.75, -0.5)
 w,h=160,160 --Width & Height in pixels.
 cx,cy=w/2,h/2 --Don't touch.
 
-SCREEN={near=0, sizeX=0.7 ,sizeY=0.7, placementOffsetX=0, placementOffsetY=0.01, centerX=cx, centerY=cy}
+SCREEN={near=0, sizeX=0.7 ,sizeY=0.7, placementOffsetX=0, placementOffsetY=-0.01, centerX=cx, centerY=cy}
 --[[SCREEN Explanation
 -near is the distance from tip of the (compact pilot) seat to the screen in meters.
  
