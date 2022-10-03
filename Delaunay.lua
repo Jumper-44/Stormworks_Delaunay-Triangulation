@@ -57,7 +57,7 @@ Recieves cameraTransform_world and laserPos from "CameraTransform.lua" script
 This does the delaunay triangulation and 3d render
 
 The triangulation is O(n*n) time complexity
-See the triangulation in browser with touchscreen https://lua.flaffipony.rocks/?id=IDyvZ6wC8P
+See the delaunay triangulation in browser with touchscreen https://lua.flaffipony.rocks/?id=IDyvZ6wC8P
 --]]
 --#endregion readme
 
@@ -250,7 +250,7 @@ New_KDTree = function(k) return {
 --#endregion kdtree
 
 --#region Rendering
-w,h = 160,160
+w,h = 160,160 --Screen Pixels
 cx,cy = w/2,h/2
 SCREEN = {centerX = cx, centerY = cy}
 

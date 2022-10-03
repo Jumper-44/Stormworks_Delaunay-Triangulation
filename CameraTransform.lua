@@ -130,7 +130,7 @@ laserOFFSET = Vec3(0, 4.75, -0.5)
 
 --#region Screen Configuration
 ------------------------------------
-------{ Screen Configuration }------
+------{ Screen Configuration }------ https://pastebin.com/hkV8csW5
 ------------------------------------
 w,h=160,160 --Width & Height in pixels.
 cx,cy=w/2,h/2 --Don't touch.
