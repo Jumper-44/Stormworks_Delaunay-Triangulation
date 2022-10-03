@@ -284,7 +284,7 @@ delaunay = Delaunay()
 kdtree = New_KDTree(2)
 
 minDist_squared = 10^2 -- How dense can the point cloud be
-
+colorPalette = {{0,0,255,75},{0,100,0,75}} --water, ground 
 
 function onTick()
     renderOn = input.getBool(1)
@@ -298,6 +298,12 @@ function onTick()
         --Get cameraTransform
         for i = 1, 16 do
             cameraTransform_world[i] = input.getNumber(i)
+        end
+
+        --Update colorPalette alhpa value
+        alpha = input.getNumber(32)
+        for i = 1, #colorPalette do
+            colorPalette[i][4] = alpha
         end
 
         --Get point
@@ -338,8 +344,6 @@ function onTick()
 
 end
 
-colorPalette = {{0,0,255,75},{0,100,0,75}} --water, ground 
-
 function onDraw()
 
     if renderOn and triangles ~= nil then
@@ -364,7 +368,8 @@ function onDraw()
             end
         end
 
-        screen.setColor(255,255,255)
+        screen.setColor(255,255,255,125)
+        screen.drawText(0,130,"Alpha: "..alpha)
         screen.drawText(0,140,"#Triangles: "..#delaunay.trianglesMesh)
         screen.drawText(0,150,"#DrawTriangles: "..currentDrawnTriangles)
     end

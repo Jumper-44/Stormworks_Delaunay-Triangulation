@@ -168,6 +168,7 @@ function onTick()
     renderOn = input.getBool(1)
     output.setBool(1, renderOn)
     output.setBool(2, input.getBool(3)) -- pass through scan clear
+    output.setNumber(32, input.getNumber(14)) -- Pass through color alpha value
 
     for i = 17, 19 do output.setNumber(i, 0) end -- Clear laserPos output
 
