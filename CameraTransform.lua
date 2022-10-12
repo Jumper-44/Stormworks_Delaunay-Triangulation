@@ -208,7 +208,7 @@ translationMatrix_world = {
 
 laserOFFSET = Vec3(0, 4.75, -0.5)
 
-local kdtree = KDTree(2)
+local kdtree = KDTree(3)
 minDist_squared = 10^2 -- How dense can the point cloud be
 ------------------------------------
 --#endregion Initialization
@@ -254,7 +254,7 @@ function onTick()
     clear = input.getBool(3)
 
     if clear then
-        kdtree = KDTree(2)
+        kdtree = KDTree(3)
     end
 
     -- pass through --
