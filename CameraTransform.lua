@@ -59,6 +59,88 @@ Sends the cameraTransform_world and laserPos to the next lua script (ingame)
 --]]
 --#endregion readme
 
+--#region kdtree
+local Dist2 = function(a,b)
+    local sum, dis = 0, 0
+    for i = 1, #a do
+        dis = a[i]-b[i]
+        sum = sum + dis*dis
+    end
+    return sum
+end
+
+local Closest = function(left, right, point)
+    if left == nil then return right end
+    if right == nil then return left end
+
+    local d1,d2 =
+        Dist2(left.point, point),
+        Dist2(right.point, point)
+
+    if (d1 < d2) then
+        return left, d1
+    else
+        return right, d2
+    end
+end
+
+-- https://youtu.be/Glp7THUpGow || https://bitbucket.org/StableSort/play/src/master/src/com/stablesort/kdtree/KDTree.java
+-- https://www.geeksforgeeks.org/k-dimensional-tree/
+local KDTree = function(k) return {
+    k = k;
+    tree = {};
+
+    insert = function(self, point)
+        self:insertRecursive(self.tree, point, 0)
+    end;
+    insertRecursive = function(self, root, point, depth)
+        if root.point == nil then --Create node if nil
+            root.point = point
+            root.left = {}
+            root.right = {}
+            return
+        end
+
+        local cd = depth % self.k + 1
+
+        if point[cd] < root.point[cd] then
+            self:insertRecursive(root.left, point, depth + 1)
+        else
+            self:insertRecursive(root.right, point, depth + 1)
+        end
+    end;
+
+    nearestNeighbor = function(self, point) -- Returns nearest node to point and distance squared
+        return self:nearestNeighborRecursive(self.tree, point, 0)
+    end;
+    nearestNeighborRecursive = function(self, root, point, depth)
+        if root.point == nil then return nil end
+
+        local cd = depth % self.k + 1
+        if point[cd] < root.point[cd] then
+            nextBranch, ortherBranch = root.left, root.right
+        else
+            nextBranch, ortherBranch = root.right, root.left
+        end
+
+        local temp = self:nearestNeighborRecursive(nextBranch, point, depth+1)
+        local best = Closest(temp, root, point)
+
+        local r2, dist, r2_ =
+            Dist2(point, best.point),
+            point[cd] - root.point[cd],
+            nil
+
+        if r2 >= dist*dist then
+            temp = self:nearestNeighborRecursive(ortherBranch, point, depth+1)
+            best, r2_ = Closest(temp, best, point)
+        end
+
+        return best, r2_ or r2
+    end
+} end
+--#endregion kdtree
+
 --#region Initialization
 ------------------------------------
 ---------{ Initialization }---------
@@ -125,6 +207,9 @@ translationMatrix_world = {
 
 
 laserOFFSET = Vec3(0, 4.75, -0.5)
+
+local kdtree = KDTree(2)
+minDist_squared = 10^2 -- How dense can the point cloud be
 ------------------------------------
 --#endregion Initialization
 
@@ -166,11 +251,17 @@ aspectRatio=w/h
 
 function onTick()
     renderOn = input.getBool(1)
-    output.setBool(1, renderOn)
-    output.setBool(2, input.getBool(3)) -- pass through scan clear
-    output.setNumber(32, input.getNumber(14)) -- Pass through color alpha value
+    clear = input.getBool(3)
 
-    for i = 17, 19 do output.setNumber(i, 0) end -- Clear laserPos output
+    if clear then
+        kdtree = KDTree(2)
+    end
+
+    -- pass through --
+    output.setBool(1, renderOn)
+    output.setBool(2, clear)
+    output.setNumber(32, input.getNumber(14)) -- Pass through color alpha value
+    ------------------
 
     if renderOn then
         --#region cameraTransform_world
@@ -259,28 +350,38 @@ function onTick()
         end
         --#endregion cameraTransform_world
 
-        --#region laserPos
-        laserDistance, laserCompass, laserTiltSensor = getN(11,12,13)
+    end -- if renderOn
 
-        if laserDistance > 1 and laserDistance < 4000 then
-            laserDistance = laserDistance + 0.375
-            local dis = math.cos((laserTiltSensor+1)*tau)*laserDistance
 
-            laserPos = Vec3(
-                math.sin(-laserCompass*tau)*dis,
-                math.cos(-laserCompass*tau)*dis,
-                math.sin((laserTiltSensor+1)*tau)*laserDistance
-            )
+    --#region laserPos
+    local laserOutput = {0,0,0}
 
-            laserPos = Vec3( table.unpack( MatrixMul(rotationMatrixZXY, {{laserOFFSET:unpack(1)}})[1])):add(gps):add(laserPos)
+    laserDistance, laserCompass, laserTiltSensor = getN(11,12,13)
 
-            output.setNumber(17, laserPos.x)
-            output.setNumber(18, laserPos.y)
-            output.setNumber(19, laserPos.z)
+    if laserDistance > 1 and laserDistance < 4000 then
+        laserDistance = laserDistance + 0.375
+        local dis = math.cos((laserTiltSensor)*tau)*laserDistance
+
+        laserPos = Vec3(
+            math.sin(-laserCompass*tau)*dis,
+            math.cos(-laserCompass*tau)*dis,
+            math.sin((laserTiltSensor)*tau)*laserDistance
+        )
+
+        laserPos = Vec3( table.unpack( MatrixMul(rotationMatrixZXY, {{laserOFFSET:unpack(1)}})[1])):add(gps):add(laserPos)
+
+        local point = {laserPos:unpack()}
+        local node, dist_squared = kdtree:nearestNeighbor(point)
+
+        if node == nil or dist_squared > minDist_squared then
+            kdtree:insert(point)
+
+            laserOutput = point
         end
-        --#endregion laserPos
     end
 
+    for i = 1, 3 do output.setNumber(i+16, laserOutput[i]) end
+    --#endregion laserPos
 end
 
 --[[ debug

@@ -167,88 +167,6 @@ local Delaunay = function() return {
 } end
 --#endregion Delaunay
 
---#region kdtree
-local Dist2 = function(a,b)
-    local sum, dis = 0, 0
-    for i = 1, #a do
-        dis = a[i]-b[i]
-        sum = sum + dis*dis
-    end
-    return sum
-end
-
-local Closest = function(left, right, point)
-    if left == nil then return right end
-    if right == nil then return left end
-
-    local d1,d2 =
-        Dist2(left.point, point),
-        Dist2(right.point, point)
-
-    if (d1 < d2) then
-        return left, d1
-    else
-        return right, d2
-    end
-end
-
--- https://youtu.be/Glp7THUpGow || https://bitbucket.org/StableSort/play/src/master/src/com/stablesort/kdtree/KDTree.java
--- https://www.geeksforgeeks.org/k-dimensional-tree/
-local KDTree = function(k) return {
-    k = k;
-    tree = {};
-
-    insert = function(self, point)
-        self:insertRecursive(self.tree, point, 0)
-    end;
-    insertRecursive = function(self, root, point, depth)
-        if root.point == nil then --Create node if nil
-            root.point = point
-            root.left = {}
-            root.right = {}
-            return
-        end
-
-        local cd = depth % self.k + 1
-
-        if point[cd] < root.point[cd] then
-            self:insertRecursive(root.left, point, depth + 1)
-        else
-            self:insertRecursive(root.right, point, depth + 1)
-        end
-    end;
-
-    nearestNeighbor = function(self, point) -- Returns nearest node to point and distance squared
-        return self:nearestNeighborRecursive(self.tree, point, 0)
-    end;
-    nearestNeighborRecursive = function(self, root, point, depth)
-        if root.point == nil then return nil end
-
-        local cd = depth % self.k + 1
-        if point[cd] < root.point[cd] then
-            nextBranch, ortherBranch = root.left, root.right
-        else
-            nextBranch, ortherBranch = root.right, root.left
-        end
-
-        local temp = self:nearestNeighborRecursive(nextBranch, point, depth+1)
-        local best = Closest(temp, root, point)
-
-        local r2, dist, r2_ =
-            Dist2(point, best.point),
-            point[cd] - root.point[cd],
-            nil
-
-        if r2 >= dist*dist then
-            temp = self:nearestNeighborRecursive(ortherBranch, point, depth+1)
-            best, r2_ = Closest(temp, best, point)
-        end
-
-        return best, r2_ or r2
-    end
-} end
---#endregion kdtree
-
 --#region Rendering
 w,h = 160,160 -- Screen Pixels
 cx,cy = w/2,h/2
@@ -279,22 +197,46 @@ end
 --#endregion Rendering
 
 
-local delaunay, kdtree, colorPalette, cameraTransform_world, point, triangles, minDist_squared =
+-- init
+local delaunay, colorPalette, cameraTransform_world, point, triangles =
     Delaunay(), -- delaunay
-    KDTree(2), -- kdtree
     {{0,0,255,75},{0,100,0,75}}, -- colorPalette : {water, ground}
     {}, -- cameraTransform_world
     {}, -- point
-    nil, -- triangles
-    10^2 -- minDist_squared : How dense can the point cloud be
+    nil -- triangles
 
 
 function onTick()
     renderOn = input.getBool(1)
     if input.getBool(2) then -- Clear scan
         delaunay = Delaunay()
-        kdtree = KDTree(2)
         triangles = nil
+    end
+
+    --Get point
+    point = {input.getNumber(17), input.getNumber(18), input.getNumber(19)}
+
+    if point[1] ~= 0 and point[2] ~= 0 then
+        delaunay.vertices[#delaunay.vertices + 1] = Point( table.unpack(point) )
+        delaunay:triangulate()
+        delaunay:calcMesh()
+
+        triangles = {{},{}}
+
+        for i = 1, #delaunay.trianglesMesh do
+            local triangle = delaunay.trianglesMesh[i]
+            local verticesUnderWater, set = 0, {triangle.v1.z, triangle.v2.z, triangle.v3.z}
+
+            for j = 1, 3 do
+                verticesUnderWater = verticesUnderWater + (set[j] < 0 and 1 or 0)
+            end
+
+            if verticesUnderWater > 1 then
+                triangles[1][#triangles[1] + 1] = triangle
+            else
+                triangles[2][#triangles[2] + 1] = triangle
+            end
+        end
     end
 
     if renderOn then
@@ -307,41 +249,6 @@ function onTick()
         alpha = input.getNumber(32)
         for i = 1, #colorPalette do
             colorPalette[i][4] = alpha
-        end
-
-        --Get point
-        point = {input.getNumber(17), input.getNumber(18), input.getNumber(19)}
-
-        --Try add point
-        if point[1] ~= 0 and point[2] ~= 0 then
-            node, dist_squared = kdtree:nearestNeighbor(point)
-
-            if node == nil or dist_squared > minDist_squared then
-                kdtree:insert(point)
-
-                delaunay.vertices[#delaunay.vertices + 1] = Point( table.unpack(point) )
-                delaunay:triangulate()
-                delaunay:calcMesh()
-
-
-                triangles = {{},{}}
-
-                for i = 1, #delaunay.trianglesMesh do
-                    local triangle = delaunay.trianglesMesh[i]
-                    local verticesUnderWater, set = 0, {triangle.v1.z, triangle.v2.z, triangle.v3.z}
-
-                    for j = 1, 3 do
-                        verticesUnderWater = verticesUnderWater + (set[j] < 0 and 1 or 0)
-                    end
-
-                    if verticesUnderWater > 1 then
-                        triangles[1][#triangles[1] + 1] = triangle
-                    else
-                        triangles[2][#triangles[2] + 1] = triangle
-                    end
-                end
-
-            end
         end
     end
 
