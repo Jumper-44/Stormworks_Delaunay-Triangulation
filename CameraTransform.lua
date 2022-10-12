@@ -142,10 +142,7 @@ local KDTree = function(k) return {
 --#endregion kdtree
 
 --#region Initialization
-------------------------------------
----------{ Initialization }---------
-------------------------------------
-tau=math.pi*2
+tau = math.pi*2
 
 getN = function(...)
     local r = {}
@@ -210,7 +207,6 @@ laserOFFSET = Vec3(0, 4.75, -0.5)
 
 local kdtree = KDTree(3)
 minDist_squared = 10^2 -- How dense can the point cloud be
-------------------------------------
 --#endregion Initialization
 
 --#region Screen Configuration
@@ -218,9 +214,9 @@ minDist_squared = 10^2 -- How dense can the point cloud be
 ------{ Screen Configuration }------ https://pastebin.com/hkV8csW5
 ------------------------------------
 w,h=160,160 --Width & Height in pixels.
-cx,cy=w/2,h/2 --Don't touch.
+cx,cy=w/2,h/2 --Don't touch    -    cx AND cy ARE NOT USED IN THIS SCRIPT BUT KEPT FOR COMPLETENESS TO EXPLANATION
 
-SCREEN={near=0, sizeX=0.7 ,sizeY=0.7, placementOffsetX=0, placementOffsetY=-0.01, centerX=cx, centerY=cy}
+SCREEN={near=0, sizeX=0.7 ,sizeY=0.7, placementOffsetX=0, placementOffsetY=-0.01, centerX=cx, centerY=cy} -- change centerX|Y in 'Delaunay.lua'
 --[[SCREEN Explanation
 -near is the distance from tip of the (compact pilot) seat to the screen in meters.
  
