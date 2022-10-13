@@ -61,6 +61,16 @@ See the delaunay triangulation in browser with touchscreen https://lua.flaffipon
 --]]
 --#endregion readme
 
+--#region math
+local Scale, Dot, Cross =
+    function(a,b) return {x = a.x*b, y = a.y*b, z = a.z*b} end,
+    function(a,b) return a.x*b.x + a.y*b.y + a.z*b.z end,
+    function(a,b) return {x = a.y*b.z-a.z*b.y, y = a.z*b.x-a.x*b.z, z = a.x*b.y-a.y*b.x} end
+
+local Len = function(a) return Dot(a,a)^.5 end
+local Normalize = function(a) return Scale(a, 1/Len(a)) end
+--#endregion math
+
 --#region Delaunay
 local GetCircumCircle = function(a,b,c)
     local dx_ab, dy_ab, dx_ac, dy_ac =
@@ -247,9 +257,9 @@ function onTick()
         end
 
         -- Get camera direction vector
-        for i = 17, 19 do
-            cameraDirection[i] = input.getNumber(i)
-        end
+        cameraDirection.x = input.getNumber(17)
+        cameraDirection.y = input.getNumber(18)
+        cameraDirection.z = input.getNumber(19)
 
         -- Update colorPalette alhpa value
         alpha = input.getNumber(32)
