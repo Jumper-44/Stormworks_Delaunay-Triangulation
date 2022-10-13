@@ -62,7 +62,9 @@ See the delaunay triangulation in browser with touchscreen https://lua.flaffipon
 --#endregion readme
 
 --#region math
-local Scale, Dot, Cross =
+local Add, Sub, Scale, Dot, Cross =
+    function(a,b) return {x = a.x+b.x, y = a.y+b.y, z = a.z+b.z} end,
+    function(a,b) return {x = a.x-b.x, y = a.y-b.y, z = a.z-b.z} end,
     function(a,b) return {x = a.x*b, y = a.y*b, z = a.z*b} end,
     function(a,b) return a.x*b.x + a.y*b.y + a.z*b.z end,
     function(a,b) return {x = a.y*b.z-a.z*b.y, y = a.z*b.x-a.x*b.z, z = a.x*b.y-a.y*b.x} end
@@ -95,16 +97,25 @@ local GetCircumCircle = function(a,b,c)
     }
 end
 
+local Normal = function(a,b,c)
+    local normal = Normalize( Cross(Sub(a,b), Sub(a,c)) )
+    if normal.z < 0 then normal = Scale(normal, -1) end -- Making sure the normal is upwards, as triangle vertices aren't ordered
+
+    return normal
+end
+
 -- Point Class
-Point = function(x,y,z,id) return {
+local Point = function(x,y,z,id) return {
     x=x; y=y, z=z or 0; id=id or 0
 } end
 
 -- Triangle Class
-Triangle = function(p1,p2,p3) return {
+local Triangle = function(p1,p2,p3) return {
     v1=p1; v2=p2; v3=p3;
 
-    circle = GetCircumCircle(p1,p2,p3)
+    circle = GetCircumCircle(p1,p2,p3);
+
+    normal = Normal(p1,p2,p3)
 } end
 
 local Delaunay = function() return {
