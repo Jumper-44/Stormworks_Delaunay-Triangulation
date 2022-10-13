@@ -259,6 +259,8 @@ function onTick()
     output.setNumber(32, input.getNumber(14)) -- Pass through color alpha value
     ------------------
 
+    local laserOutput = {0,0,0}
+
     if renderOn then
         --#region cameraTransform_world
         gps.x,gps.y,gps.z,z = getN(1,2,3,4)
@@ -351,38 +353,35 @@ function onTick()
         end
         --#endregion cameraTransform_world
 
+        --#region laserPos
+        laserDistance, laserCompass, laserTiltSensor = getN(11,12,13)
+
+        if laserDistance > 1 and laserDistance < 4000 then
+            laserDistance = laserDistance + 0.375
+            local dis = math.cos((laserTiltSensor)*tau)*laserDistance
+
+            laserPos = Vec3(
+                math.sin(-laserCompass*tau)*dis,
+                math.cos(-laserCompass*tau)*dis,
+                math.sin((laserTiltSensor)*tau)*laserDistance
+            )
+
+            laserPos = Vec3( table.unpack( MatrixMul(rotationMatrixZXY, {{laserOFFSET:unpack(1)}})[1])):add(gps):add(laserPos)
+
+            local point = {laserPos:unpack()}
+            local node, dist_squared = kdtree:nearestNeighbor(point)
+
+            if node == nil or dist_squared > minDist_squared then
+                kdtree:insert(point)
+
+                laserOutput = point
+            end
+        end
+        --#endregion laserPos
+
     end -- if renderOn
 
-
-    --#region laserPos
-    local laserOutput = {0,0,0}
-
-    laserDistance, laserCompass, laserTiltSensor = getN(11,12,13)
-
-    if laserDistance > 1 and laserDistance < 4000 then
-        laserDistance = laserDistance + 0.375
-        local dis = math.cos((laserTiltSensor)*tau)*laserDistance
-
-        laserPos = Vec3(
-            math.sin(-laserCompass*tau)*dis,
-            math.cos(-laserCompass*tau)*dis,
-            math.sin((laserTiltSensor)*tau)*laserDistance
-        )
-
-        laserPos = Vec3( table.unpack( MatrixMul(rotationMatrixZXY, {{laserOFFSET:unpack(1)}})[1])):add(gps):add(laserPos)
-
-        local point = {laserPos:unpack()}
-        local node, dist_squared = kdtree:nearestNeighbor(point)
-
-        if node == nil or dist_squared > minDist_squared then
-            kdtree:insert(point)
-
-            laserOutput = point
-        end
-    end
-
     for i = 1, 3 do output.setNumber(i+19, laserOutput[i]) end
-    --#endregion laserPos
 end
 
 --[[ debug
