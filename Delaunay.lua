@@ -98,7 +98,7 @@ Triangle = function(p1,p2,p3) return {
 } end
 
 local Delaunay = function() return {
-    trianglesMesh = {}; -- CalcMesh() will populate this
+    trianglesMesh = {}; -- calcMesh() will populate this
 
     vertices = {};
     n_vertices = 0;
@@ -198,10 +198,11 @@ end
 
 
 -- init
-local delaunay, colorPalette, cameraTransform_world, point, triangles =
+local delaunay, colorPalette, cameraTransform_world, cameraDirection, point, triangles =
     Delaunay(), -- delaunay
     {{0,0,255,75},{0,100,0,75}}, -- colorPalette : {water, ground}
     {}, -- cameraTransform_world
+    {}, -- cameraDirection
     {}, -- point
     nil -- triangles
 
@@ -214,7 +215,7 @@ function onTick()
     end
 
     --Get point
-    point = {input.getNumber(17), input.getNumber(18), input.getNumber(19)}
+    point = {input.getNumber(20), input.getNumber(21), input.getNumber(22)}
 
     if point[1] ~= 0 and point[2] ~= 0 then
         delaunay.vertices[#delaunay.vertices + 1] = Point( table.unpack(point) )
@@ -240,12 +241,17 @@ function onTick()
     end
 
     if renderOn then
-        --Get cameraTransform
+        -- Get cameraTransform
         for i = 1, 16 do
             cameraTransform_world[i] = input.getNumber(i)
         end
 
-        --Update colorPalette alhpa value
+        -- Get camera direction vector
+        for i = 17, 19 do
+            cameraDirection[i] = input.getNumber(i)
+        end
+
+        -- Update colorPalette alhpa value
         alpha = input.getNumber(32)
         for i = 1, #colorPalette do
             colorPalette[i][4] = alpha
