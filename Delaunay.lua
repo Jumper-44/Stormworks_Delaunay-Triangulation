@@ -17,7 +17,7 @@
 do
     ---@type Simulator -- Set properties and screen sizes here - will run once when the script is loaded
     simulator = simulator
-    simulator:setScreen(1, "3x3")
+    simulator:setScreen(1, "9x5")
     simulator:setProperty("ExampleNumberProperty", 123)
 
     -- Runs every tick just before onTick; allows you to simulate the inputs changing
@@ -61,27 +61,30 @@ See the delaunay triangulation in browser with touchscreen https://lua.flaffipon
 --]]
 --#endregion readme
 
---#region math
+--#region vec3
+local Vec3 = function(x,y,z) return {x=x, y=y, z=z} end
+
 local Add, Sub, Scale, Dot, Cross =
-    function(a,b) return {x = a.x+b.x, y = a.y+b.y, z = a.z+b.z} end,
-    function(a,b) return {x = a.x-b.x, y = a.y-b.y, z = a.z-b.z} end,
-    function(a,b) return {x = a.x*b, y = a.y*b, z = a.z*b} end,
+    function(a,b) return Vec3(a.x+b.x, a.y+b.y, a.z+b.z) end,
+    function(a,b) return Vec3(a.x-b.x, a.y-b.y, a.z-b.z) end,
+    function(a,b) return Vec3(a.x*b, a.y*b, a.z*b) end,
     function(a,b) return a.x*b.x + a.y*b.y + a.z*b.z end,
-    function(a,b) return {x = a.y*b.z-a.z*b.y, y = a.z*b.x-a.x*b.z, z = a.x*b.y-a.y*b.x} end
+    function(a,b) return Vec3(a.y*b.z-a.z*b.y, a.z*b.x-a.x*b.z, a.x*b.y-a.y*b.x) end
 
 local Len = function(a) return Dot(a,a)^.5 end
 local Normalize = function(a) return Scale(a, 1/Len(a)) end
---#endregion math
+--#endregion vec3
 
 --#region Rendering
 w,h = 160,160 -- Screen Pixels
 local cx,cy = w/2,h/2
-local SCREEN, LIGHT_DIRECTION =
+local SCREEN, LIGHT_DIRECTION, colorPalette =
     {centerX = cx, centerY = cy},
-    {x = 0, y = 0, z = -1}
+    Normalize(Vec3(0, 0, -1)),
+    {water_dark = Vec3(0,0,255), water_light = Vec3(0,0,255), ground = Vec3(0,100,0)}
 
-WorldToScreen_Point = function(vertices, cameraTransform)
-    local result = {}
+WorldToScreen = function(vertices, triangles, cameraTransform, cameraDir)
+    local v, t = {}, {}
 
     for i=1, #vertices do
         local x,y,z = vertices[i].x, vertices[i].y, vertices[i].z
@@ -94,13 +97,35 @@ WorldToScreen_Point = function(vertices, cameraTransform)
 
         if (-W<=X and X<=W) and (-W<=Y and Y<=W) and (0<=Z and Z<=W) then --clip and discard points
             W=1/W
-            result[#result + 1] = {X*W*cx+SCREEN.centerX, Y*W*cy+SCREEN.centerY, Z*W}
+            v[#v + 1] = {x = X*W*cx+SCREEN.centerX, y = Y*W*cy+SCREEN.centerY, z = Z*W}
         else -- x & y are screen coordinates, z is depth
-            result[#result + 1] = false
+            v[#v + 1] = false
         end
     end
 
-    return result
+    for i=1, #triangles do
+        local triangle = triangles[i]
+        local v1,v2,v3 = v[triangle.v1.id], v[triangle.v2.id], v[triangle.v3.id]
+
+        if v1 and v2 and v3 then -- if all vertices are in view
+            --if Dot(triangle.normal, cameraDir) < 0 then
+            t[#t + 1] = {
+                v1.x, v1.y, v2.x, v2.y, v3.x, v3.y;
+                color = triangle.color;
+                depth = (v1.z + v2.z + v3.z)/3
+            }
+            --end
+        end
+    end
+
+     -- painter's algorithm
+    table.sort(t,
+        function(t1,t2)
+            return t1.depth < t2.depth
+        end
+    )
+
+    return t
 end
 --#endregion Rendering
 
@@ -135,19 +160,39 @@ local Normal = function(a,b,c)
     return normal
 end
 
+local Color = function(triangle)
+    local dot, set, verticesUnderWater, color =
+        Dot(triangle.normal, LIGHT_DIRECTION),
+        {triangle.v1.z, triangle.v2.z, triangle.v3.z},
+        0, nil
+
+    for i = 1, 3 do
+        if set[i] < 0 then verticesUnderWater = verticesUnderWater + 1 end
+    end
+
+    if verticesUnderWater == 0 then         color = colorPalette.ground
+    elseif verticesUnderWater == 1 then     color = colorPalette.water_light
+    else                                    color = colorPalette.water_dark end
+
+    return Scale(color, dot>0 and 0 or dot*dot)
+end
+
 -- Point Class
 local Point = function(x,y,z,id) return {
     x=x; y=y; z=z or 0; id=id or 0
 } end
 
 -- Triangle Class
-local Triangle = function(p1,p2,p3) return {
+local Triangle = function(p1,p2,p3)
+    local triangle = {
     v1=p1; v2=p2; v3=p3;
-
     circle = GetCircumCircle(p1,p2,p3);
+    normal = Normal(p1,p2,p3)}
 
-    normal = Normal(p1,p2,p3)
-} end
+    triangle.color = Color(triangle)
+
+    return triangle
+end
 
 local Delaunay = function() return {
     trianglesMesh = {}; -- calcMesh() will populate this
@@ -221,95 +266,78 @@ local Delaunay = function() return {
 
 
 --#region init
-local delaunay, colorPalette, cameraTransform_world, cameraDirection, point, triangles =
+local delaunay, cameraTransform_world, cameraDirection, point, alpha =
     Delaunay(), -- delaunay
-    {{0,0,255,75},{0,100,0,75}}, -- colorPalette : {water, ground}
     {}, -- cameraTransform_world
     {}, -- cameraDirection
     {}, -- point
-    nil -- triangles
+    0 -- alpha
 --#endregion init
 
 function onTick()
     renderOn = input.getBool(1)
     if input.getBool(2) then -- Clear scan
         delaunay = Delaunay()
-        triangles = nil
-    end
-
-    --Get point
-    point = {input.getNumber(20), input.getNumber(21), input.getNumber(22)}
-
-    if point[1] ~= 0 and point[2] ~= 0 then
-        delaunay.vertices[#delaunay.vertices + 1] = Point( table.unpack(point) )
-        delaunay:triangulate()
-        delaunay:calcMesh()
-
-        triangles = {{},{}}
-
-        for i = 1, #delaunay.trianglesMesh do
-            local triangle = delaunay.trianglesMesh[i]
-            local verticesUnderWater, set = 0, {triangle.v1.z, triangle.v2.z, triangle.v3.z}
-
-            for j = 1, 3 do
-                verticesUnderWater = verticesUnderWater + (set[j] < 0 and 1 or 0)
-            end
-
-            if verticesUnderWater > 1 then
-                triangles[1][#triangles[1] + 1] = triangle
-            else
-                triangles[2][#triangles[2] + 1] = triangle
-            end
-        end
     end
 
     if renderOn then
         -- Get cameraTransform
         for i = 1, 16 do
             cameraTransform_world[i] = input.getNumber(i)
+            triangles = {}
         end
 
-        -- Get camera direction vector
-        cameraDirection.x = input.getNumber(17)
-        cameraDirection.y = input.getNumber(18)
-        cameraDirection.z = input.getNumber(19)
+        cameraDirection = {x = input.getNumber(17), y = input.getNumber(18), z = input.getNumber(19)}
 
-        -- Update colorPalette alhpa value
         alpha = input.getNumber(32)
-        for i = 1, #colorPalette do
-            colorPalette[i][4] = alpha
-        end
-    end
 
+
+        point = {input.getNumber(20), input.getNumber(21), input.getNumber(22)}
+
+        if point[1] ~= 0 and point[2] ~= 0 then
+            delaunay.vertices[#delaunay.vertices + 1] = Point( table.unpack(point) )
+            delaunay:triangulate()
+            delaunay:calcMesh()
+        end
+
+    end
 end
 
 function onDraw()
 
-    if renderOn and triangles then
+    if renderOn then
 
-        local transformed_vertices, currentDrawnTriangles, drawTriangle =
-            WorldToScreen_Point(delaunay.vertices, cameraTransform_world),
-            0,
-            screen.drawTriangle
+        local setColor, drawTriangleF, drawTriangle, currentDrawnTriangles =
+        screen.setColor,
+        screen.drawTriangleF,
+        screen.drawTriangle,
+        0
 
-        for i = 1, #colorPalette do
-            screen.setColor( table.unpack(colorPalette[i]) )
+        --#region drawTriangle
+        if #delaunay.trianglesMesh > 0 then
+            local triangles = WorldToScreen(delaunay.vertices, delaunay.trianglesMesh, cameraTransform_world, cameraDirection)
 
-            for j = 1, #triangles[i] do
-                local triangle = triangles[i][j]
-                local v1, v2, v3 =
-                    transformed_vertices[triangle.v1.id],
-                    transformed_vertices[triangle.v2.id],
-                    transformed_vertices[triangle.v3.id]
+            for i = 1, #triangles do
+                local triangle = triangles[i]
 
-                if v1 and v2 and v3 then -- Only draws triangle if all vertices are in view
-                    drawTriangle(v1[1],v1[2], v2[1],v2[2], v3[1],v3[2])
-                    currentDrawnTriangles = currentDrawnTriangles + 1
-                end
+                setColor(triangle.color.x, triangle.color.y, triangle.color.z, 255)
+                drawTriangleF(table.unpack(triangle))
+                currentDrawnTriangles = currentDrawnTriangles + 1
             end
-        end
 
-        screen.setColor(255,255,255,125)
+            -- [[ wireframe
+            setColor(255,255,0,20)
+            for i = 1, #triangles do
+                drawTriangle(table.unpack(triangles[i]))
+            end
+            --]]
+
+            setColor(0,0,0,255-alpha)
+            screen.drawRectF(0,0,w,h)
+        end
+        --#endregion drawTriangle
+
+        setColor(255,255,255,125)
         screen.drawText(0,130,"Alpha: "..alpha)
         screen.drawText(0,140,"#Triangles: "..#delaunay.trianglesMesh)
         screen.drawText(0,150,"#DrawTriangles: "..currentDrawnTriangles)
