@@ -73,6 +73,37 @@ local Len = function(a) return Dot(a,a)^.5 end
 local Normalize = function(a) return Scale(a, 1/Len(a)) end
 --#endregion math
 
+--#region Rendering
+w,h = 160,160 -- Screen Pixels
+local cx,cy = w/2,h/2
+local SCREEN, LIGHT_DIRECTION =
+    {centerX = cx, centerY = cy},
+    {x = 0, y = 0, z = -1}
+
+WorldToScreen_Point = function(vertices, cameraTransform)
+    local result = {}
+
+    for i=1, #vertices do
+        local x,y,z = vertices[i].x, vertices[i].y, vertices[i].z
+
+        local X,Y,Z,W =
+            cameraTransform[1]*x + cameraTransform[5]*y + cameraTransform[9]*z + cameraTransform[13],
+            cameraTransform[2]*x + cameraTransform[6]*y + cameraTransform[10]*z + cameraTransform[14],
+            cameraTransform[3]*x + cameraTransform[7]*y + cameraTransform[11]*z + cameraTransform[15],
+            cameraTransform[4]*x + cameraTransform[8]*y + cameraTransform[12]*z + cameraTransform[16]
+
+        if (-W<=X and X<=W) and (-W<=Y and Y<=W) and (0<=Z and Z<=W) then --clip and discard points
+            W=1/W
+            result[#result + 1] = {X*W*cx+SCREEN.centerX, Y*W*cy+SCREEN.centerY, Z*W}
+        else -- x & y are screen coordinates, z is depth
+            result[#result + 1] = false
+        end
+    end
+
+    return result
+end
+--#endregion Rendering
+
 --#region Delaunay
 local GetCircumCircle = function(a,b,c)
     local dx_ab, dy_ab, dx_ac, dy_ac =
@@ -106,7 +137,7 @@ end
 
 -- Point Class
 local Point = function(x,y,z,id) return {
-    x=x; y=y, z=z or 0; id=id or 0
+    x=x; y=y; z=z or 0; id=id or 0
 } end
 
 -- Triangle Class
@@ -188,37 +219,8 @@ local Delaunay = function() return {
 } end
 --#endregion Delaunay
 
---#region Rendering
-w,h = 160,160 -- Screen Pixels
-cx,cy = w/2,h/2
-SCREEN = {centerX = cx, centerY = cy}
 
-WorldToScreen_Point = function(vertices, cameraTransform)
-    local result = {}
-
-    for i=1, #vertices do
-        local x,y,z = vertices[i].x, vertices[i].y, vertices[i].z
-
-        local X,Y,Z,W =
-            cameraTransform[1]*x + cameraTransform[5]*y + cameraTransform[9]*z + cameraTransform[13],
-            cameraTransform[2]*x + cameraTransform[6]*y + cameraTransform[10]*z + cameraTransform[14],
-            cameraTransform[3]*x + cameraTransform[7]*y + cameraTransform[11]*z + cameraTransform[15],
-            cameraTransform[4]*x + cameraTransform[8]*y + cameraTransform[12]*z + cameraTransform[16]
-
-        if (-W<=X and X<=W) and (-W<=Y and Y<=W) and (0<=Z and Z<=W) then --clip and discard points
-            W=1/W
-            result[#result + 1] = {X*W*cx+SCREEN.centerX, Y*W*cy+SCREEN.centerY, Z*W}
-        else -- x & y are screen coordinates, z is depth
-            result[#result + 1] = false
-        end
-    end
-
-    return result
-end
---#endregion Rendering
-
-
--- init
+--#region init
 local delaunay, colorPalette, cameraTransform_world, cameraDirection, point, triangles =
     Delaunay(), -- delaunay
     {{0,0,255,75},{0,100,0,75}}, -- colorPalette : {water, ground}
@@ -226,7 +228,7 @@ local delaunay, colorPalette, cameraTransform_world, cameraDirection, point, tri
     {}, -- cameraDirection
     {}, -- point
     nil -- triangles
-
+--#endregion init
 
 function onTick()
     renderOn = input.getBool(1)
