@@ -78,13 +78,12 @@ local Normalize = function(a) return Scale(a, 1/Len(a)) end
 --#region Rendering
 w,h = 160,160 -- Screen Pixels
 local cx,cy = w/2,h/2
-local SCREEN, LIGHT_DIRECTION, colorPalette =
+local SCREEN, LIGHT_DIRECTION =
     {centerX = cx, centerY = cy},
-    Normalize(Vec3(0, 0, -1)),
-    {water_dark = Vec3(0,0,255), water_light = Vec3(0,0,255), ground = Vec3(0,100,0)}
+    Normalize(Vec3(0, 0.1, -1))
 
-WorldToScreen = function(vertices, triangles, cameraTransform, cameraDir)
-    local v, t = {}, {}
+WorldToScreen = function(vertex_buffer, vertices, triangles, cameraTransform, cameraDir)
+    local tri = {}
 
     for i=1, #vertices do
         local x,y,z = vertices[i].x, vertices[i].y, vertices[i].z
@@ -97,35 +96,35 @@ WorldToScreen = function(vertices, triangles, cameraTransform, cameraDir)
 
         if (-W<=X and X<=W) and (-W<=Y and Y<=W) and (0<=Z and Z<=W) then --clip and discard points
             W=1/W
-            v[#v + 1] = {x = X*W*cx+SCREEN.centerX, y = Y*W*cy+SCREEN.centerY, z = Z*W}
+            vertex_buffer[i] = {x = X*W*cx+SCREEN.centerX, y = Y*W*cy+SCREEN.centerY, z = Z*W}
         else -- x & y are screen coordinates, z is depth
-            v[#v + 1] = false
+            vertex_buffer[i] = false
         end
     end
 
     for i=1, #triangles do
         local triangle = triangles[i]
-        local v1,v2,v3 = v[triangle.v1.id], v[triangle.v2.id], v[triangle.v3.id]
+        local v1,v2,v3 = vertex_buffer[triangle.v1.id], vertex_buffer[triangle.v2.id], vertex_buffer[triangle.v3.id]
 
         if v1 and v2 and v3 then -- if all vertices are in view
             --if Dot(triangle.normal, cameraDir) < 0 then
-            t[#t + 1] = {
-                v1.x, v1.y, v2.x, v2.y, v3.x, v3.y;
+            tri[#tri + 1] = {
+                v1=v1, v2=v2, v3=v3;
                 color = triangle.color;
-                depth = (v1.z + v2.z + v3.z)/3
+                depth = (1/3)*(v1.z + v2.z + v3.z)
             }
             --end
         end
     end
 
      -- painter's algorithm
-    table.sort(t,
-        function(t1,t2)
-            return t1.depth < t2.depth
+    table.sort(tri,
+        function(triangle1,triangle2)
+            return triangle1.depth > triangle2.depth
         end
     )
 
-    return t
+    return tri
 end
 --#endregion Rendering
 
@@ -160,21 +159,24 @@ local Normal = function(a,b,c)
     return normal
 end
 
+local colorPalette = {
+    water={flat = Vec3(0,0,255), steep = Vec3(0,150,255)},
+    ground={flat = Vec3(0,255,0), steep = Vec3(255,200,0)}
+}
 local Color = function(triangle)
     local dot, set, verticesUnderWater, color =
         Dot(triangle.normal, LIGHT_DIRECTION),
         {triangle.v1.z, triangle.v2.z, triangle.v3.z},
         0, nil
 
-    for i = 1, 3 do
-        if set[i] < 0 then verticesUnderWater = verticesUnderWater + 1 end
-    end
+    for i = 1, 3 do  if set[i] < 0 then verticesUnderWater = verticesUnderWater + 1 end  end
 
-    if verticesUnderWater == 0 then         color = colorPalette.ground
-    elseif verticesUnderWater == 1 then     color = colorPalette.water_light
-    else                                    color = colorPalette.water_dark end
+    if verticesUnderWater > 1 then color = colorPalette.water else color = colorPalette.ground end
 
-    return Scale(color, dot>0 and 0 or dot*dot)
+    dot = dot*dot
+    dot = dot*dot*0.9 + 0.1
+
+    return Scale( Add(Scale(color.flat, dot), Scale(color.steep, 1-dot)), dot )
 end
 
 -- Point Class
@@ -307,7 +309,8 @@ function onDraw()
 
     if renderOn then
 
-        local setColor, drawTriangleF, drawTriangle, currentDrawnTriangles =
+        local vertex_buffer, setColor, drawTriangleF, drawTriangle, currentDrawnTriangles =
+        {},
         screen.setColor,
         screen.drawTriangleF,
         screen.drawTriangle,
@@ -315,22 +318,17 @@ function onDraw()
 
         --#region drawTriangle
         if #delaunay.trianglesMesh > 0 then
-            local triangles = WorldToScreen(delaunay.vertices, delaunay.trianglesMesh, cameraTransform_world, cameraDirection)
+            local triangles = WorldToScreen(vertex_buffer, delaunay.vertices, delaunay.trianglesMesh, cameraTransform_world, cameraDirection)
 
             for i = 1, #triangles do
                 local triangle = triangles[i]
 
-                setColor(triangle.color.x, triangle.color.y, triangle.color.z, 255)
-                drawTriangleF(table.unpack(triangle))
+                setColor(triangle.color.x, triangle.color.y, triangle.color.z)
+
+                drawTriangleF(triangle.v1.x, triangle.v1.y, triangle.v2.x, triangle.v2.y, triangle.v3.x, triangle.v3.y)
+
                 currentDrawnTriangles = currentDrawnTriangles + 1
             end
-
-            -- [[ wireframe
-            setColor(255,255,0,20)
-            for i = 1, #triangles do
-                drawTriangle(table.unpack(triangles[i]))
-            end
-            --]]
 
             setColor(0,0,0,255-alpha)
             screen.drawRectF(0,0,w,h)
