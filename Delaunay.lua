@@ -174,9 +174,7 @@ local Color = function(triangle)
     if verticesUnderWater > 1 then color = colorPalette.water else color = colorPalette.ground end
 
     dot = dot*dot
-    dot = dot*dot*0.9 + 0.1
-
-    return Scale( Add(Scale(color.flat, dot), Scale(color.steep, 1-dot)), dot )
+    return Scale( Add(Scale(color.flat, dot), Scale(color.steep, 1-dot)), dot*dot*0.9 + 0.1 )
 end
 
 -- Point Class
@@ -250,7 +248,7 @@ local Delaunay = function() return {
     end;
 
     calcMesh = function(self) -- The step to remove the triangles which shares a vertex with the Supertriangle
-        self.trianglesMesh = {}
+        local n = 1 -- Asuming triangleMesh has the same or less triangles than new set, so just overwriting existing set.
 
         for i = 2, #self.triangles do
             if not (
@@ -258,7 +256,8 @@ local Delaunay = function() return {
                 self.triangles[i].v2.id == 0 or
                 self.triangles[i].v3.id == 0 )
             then
-                self.trianglesMesh[#self.trianglesMesh + 1] = self.triangles[i]
+                self.trianglesMesh[n] = self.triangles[i]
+                n = n+1
             end
         end
     end
@@ -268,12 +267,13 @@ local Delaunay = function() return {
 
 
 --#region init
-local delaunay, cameraTransform_world, cameraDirection, point, alpha =
+local delaunay, cameraTransform_world, cameraDirection, point, alpha, vertex_buffer =
     Delaunay(), -- delaunay
     {}, -- cameraTransform_world
     {}, -- cameraDirection
     {}, -- point
-    0 -- alpha
+    0, -- alpha
+    {} -- vertex_buffer
 --#endregion init
 
 function onTick()
@@ -309,8 +309,7 @@ function onDraw()
 
     if renderOn then
 
-        local vertex_buffer, setColor, drawTriangleF, drawTriangle, currentDrawnTriangles =
-        {},
+        local setColor, drawTriangleF, drawTriangle, currentDrawnTriangles =
         screen.setColor,
         screen.drawTriangleF,
         screen.drawTriangle,
