@@ -94,9 +94,12 @@ WorldToScreen = function(vertex_buffer, vertices, triangles, cameraTransform)
             cameraTransform[3]*x + cameraTransform[7]*y + cameraTransform[11]*z + cameraTransform[15],
             cameraTransform[4]*x + cameraTransform[8]*y + cameraTransform[12]*z + cameraTransform[16]
 
-        if (-W<=X and X<=W) and (-W<=Y and Y<=W) and (0<=Z and Z<=W) then --clip and discard points
-            W=1/W
-            vertex_buffer[i] = {x = X*W*cx+SCREEN.centerX, y = Y*W*cy+SCREEN.centerY, z = Z*W}
+        if (0<=Z and Z<=W) then --clip and discard points       -- (-W<=X and X<=W) and (-W<=Y and Y<=W) and (0<=Z and Z<=W)
+            local w = 1/W
+            vertex_buffer[i] = {
+                x = X*w*cx+SCREEN.centerX, y = Y*w*cy+SCREEN.centerY, z = Z*w,
+                isIn = (-W<=X and X<=W) and (-W<=Y and Y<=W)
+            }
         else -- x & y are screen coordinates, z is depth
             vertex_buffer[i] = false
         end
@@ -106,12 +109,14 @@ WorldToScreen = function(vertex_buffer, vertices, triangles, cameraTransform)
         local triangle = triangles[i]
         local v1,v2,v3 = vertex_buffer[triangle.v1.id], vertex_buffer[triangle.v2.id], vertex_buffer[triangle.v3.id]
 
-        if v1 and v2 and v3 then -- if all vertices are in view
-            tri[#tri + 1] = {
-                v1=v1, v2=v2, v3=v3;
-                color = triangle.color;
-                depth = (1/3)*(v1.z + v2.z + v3.z)
-            }
+        if v1 and v2 and v3 then -- if all vertices are within the near and far plane
+            if v1.isIn or v2.isIn or v3.isIn then -- if atleast 1 visible vertex
+                tri[#tri + 1] = {
+                    v1=v1, v2=v2, v3=v3;
+                    color = triangle.color;
+                    depth = (1/3)*(v1.z + v2.z + v3.z)
+                }
+            end
         end
     end
 
