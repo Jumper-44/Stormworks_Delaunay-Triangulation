@@ -166,10 +166,10 @@ local colorPalette = {
     water={flat = Vec3(0,0,255), steep = Vec3(0,150,255)},
     ground={flat = Vec3(0,255,0), steep = Vec3(255,200,0)}
 }
-local Color = function(triangle)
+local Color = function(p1,p2,p3)
     local dot, set, verticesUnderWater, color =
-        Dot(triangle.normal, LIGHT_DIRECTION),
-        {triangle.v1.z, triangle.v2.z, triangle.v3.z},
+        Dot(Normal(p1,p2,p3), LIGHT_DIRECTION),
+        {p1.z, p2.z, p3.z},
         0, nil
 
     for i = 1, 3 do  if set[i] < 0 then verticesUnderWater = verticesUnderWater + 1 end  end
@@ -186,16 +186,11 @@ local Point = function(x,y,z,id) return {
 } end
 
 -- Triangle Class
-local Triangle = function(p1,p2,p3)
-    local triangle = {
+local Triangle = function(p1,p2,p3) return {
     v1=p1; v2=p2; v3=p3;
-    circle = GetCircumCircle(p1,p2,p3);
-    normal = Normal(p1,p2,p3)}
-
-    triangle.color = Color(triangle)
-
-    return triangle
-end
+    circle = GetCircumCircle(p1,p2,p3),
+    color = Color(p1,p2,p3)
+} end
 
 local Delaunay = function() return {
     trianglesMesh = {}; -- calcMesh() will populate this
