@@ -82,7 +82,7 @@ local SCREEN, LIGHT_DIRECTION =
     {centerX = cx, centerY = cy},
     Normalize(Vec3(0, 0.1, -1))
 
-WorldToScreen = function(vertex_buffer, vertices, triangles, cameraTransform, cameraDir)
+WorldToScreen = function(vertex_buffer, vertices, triangles, cameraTransform)
     local tri = {}
 
     for i=1, #vertices do
@@ -107,13 +107,11 @@ WorldToScreen = function(vertex_buffer, vertices, triangles, cameraTransform, ca
         local v1,v2,v3 = vertex_buffer[triangle.v1.id], vertex_buffer[triangle.v2.id], vertex_buffer[triangle.v3.id]
 
         if v1 and v2 and v3 then -- if all vertices are in view
-            --if Dot(triangle.normal, cameraDir) < 0 then
             tri[#tri + 1] = {
                 v1=v1, v2=v2, v3=v3;
                 color = triangle.color;
                 depth = (1/3)*(v1.z + v2.z + v3.z)
             }
-            --end
         end
     end
 
@@ -267,10 +265,9 @@ local Delaunay = function() return {
 
 
 --#region init
-local delaunay, cameraTransform_world, cameraDirection, point, alpha, vertex_buffer =
+local delaunay, cameraTransform_world, point, alpha, vertex_buffer =
     Delaunay(), -- delaunay
     {}, -- cameraTransform_world
-    {}, -- cameraDirection
     {}, -- point
     0, -- alpha
     {} -- vertex_buffer
@@ -286,15 +283,12 @@ function onTick()
         -- Get cameraTransform
         for i = 1, 16 do
             cameraTransform_world[i] = input.getNumber(i)
-            triangles = {}
         end
-
-        cameraDirection = {x = input.getNumber(17), y = input.getNumber(18), z = input.getNumber(19)}
 
         alpha = input.getNumber(32)
 
 
-        point = {input.getNumber(20), input.getNumber(21), input.getNumber(22)}
+        point = {input.getNumber(17), input.getNumber(18), input.getNumber(19)}
 
         if point[1] ~= 0 and point[2] ~= 0 then
             delaunay.vertices[#delaunay.vertices + 1] = Point( table.unpack(point) )
@@ -317,7 +311,7 @@ function onDraw()
 
         --#region drawTriangle
         if #delaunay.trianglesMesh > 0 then
-            local triangles = WorldToScreen(vertex_buffer, delaunay.vertices, delaunay.trianglesMesh, cameraTransform_world, cameraDirection)
+            local triangles = WorldToScreen(vertex_buffer, delaunay.vertices, delaunay.trianglesMesh, cameraTransform_world)
 
             for i = 1, #triangles do
                 local triangle = triangles[i]

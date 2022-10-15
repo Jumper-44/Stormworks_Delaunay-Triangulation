@@ -346,11 +346,6 @@ function onTick()
                 output.setNumber((i-1)*4 + j, cameraTransform_world[i][j])
             end
         end
-
-        -- Output camera direction vector
-        for i=1, 3 do
-            output.setNumber(i+16, rotationMatrixZXY[2][i])
-        end
         --#endregion cameraTransform_world
 
         --#region laserPos
@@ -381,7 +376,7 @@ function onTick()
 
     end -- if renderOn
 
-    for i = 1, 3 do output.setNumber(i+19, laserOutput[i]) end
+    for i = 1, 3 do output.setNumber(i+16, laserOutput[i]) end
 end
 
 --[[ debug
