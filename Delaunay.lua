@@ -111,11 +111,13 @@ WorldToScreen = function(vertex_buffer, vertices, triangles, cameraTransform)
 
         if v1 and v2 and v3 then -- if all vertices are within the near and far plane
             if v1.isIn or v2.isIn or v3.isIn then -- if atleast 1 visible vertex
-                tri[#tri + 1] = {
-                    v1=v1, v2=v2, v3=v3;
-                    color = triangle.color;
-                    depth = (1/3)*(v1.z + v2.z + v3.z)
-                }
+                if (v1.x*v2.y - v2.x*v1.y + v2.x*v3.y - v3.x*v2.y + v3.x*v1.y - v1.x*v3.y) > 0 then -- if the triangle is facing the camera, checks for CCW
+                    tri[#tri + 1] = {
+                        v1=v1, v2=v2, v3=v3;
+                        color = triangle.color;
+                        depth = (1/3)*(v1.z + v2.z + v3.z)
+                    }
+                end
             end
         end
     end
@@ -155,24 +157,16 @@ local GetCircumCircle = function(a,b,c)
     }
 end
 
-local Normal = function(a,b,c)
-    local normal = Normalize( Cross(Sub(a,b), Sub(a,c)) )
-    if normal.z < 0 then normal = Scale(normal, -1) end -- Making sure the normal is upwards, as triangle vertices aren't ordered
-
-    return normal
-end
-
 local colorPalette = {
     water={flat = Vec3(0,0,255), steep = Vec3(0,150,255)},
     ground={flat = Vec3(0,255,0), steep = Vec3(255,200,0)}
 }
-local Color = function(p1,p2,p3)
-    local dot, set, verticesUnderWater, color =
-        Dot(Normal(p1,p2,p3), LIGHT_DIRECTION),
-        {p1.z, p2.z, p3.z},
+local Color = function(normal, ...)
+    local dot, verticesUnderWater, color =
+        Dot(normal, LIGHT_DIRECTION),
         0, nil
 
-    for i = 1, 3 do  if set[i] < 0 then verticesUnderWater = verticesUnderWater + 1 end  end
+    for _,v in ipairs({...}) do if v.z < 0 then verticesUnderWater = verticesUnderWater + 1 end end
 
     if verticesUnderWater > 1 then color = colorPalette.water else color = colorPalette.ground end
 
@@ -186,10 +180,16 @@ local Point = function(x,y,z,id) return {
 } end
 
 -- Triangle Class
-local Triangle = function(p1,p2,p3) return {
-    v1=p1; v2=p2; v3=p3;
-    circle = GetCircumCircle(p1,p2,p3),
-    color = Color(p1,p2,p3)
+local Triangle = function(p1,p2,p3)
+    local normal = Normalize( Cross(Sub(p1,p2), Sub(p2,p3)) )
+    local CCW = normal.z < 0
+
+return {
+    v1=p1;
+    v2=CCW and p2 or p3;
+    v3=CCW and p3 or p2;
+    circle = GetCircumCircle(p1,p2,p3);
+    color = Color(normal, p1,p2,p3)
 } end
 
 local Delaunay = function() return {
