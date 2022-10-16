@@ -206,7 +206,7 @@ translationMatrix_world = {
 laserOFFSET = Vec3(0, 4.75, -0.5)
 
 local kdtree = KDTree(3)
-minDist_squared = 30^2 -- How dense can the point cloud be
+local minDist_squared = 30^2 -- How dense can a flat plane be
 --#endregion Initialization
 
 --#region Screen Configuration
@@ -363,10 +363,12 @@ function onTick()
 
             laserPos = Vec3( table.unpack( MatrixMul(rotationMatrixZXY, {{laserOFFSET:unpack(1)}})[1])):add(gps):add(laserPos)
 
-            local point = {laserPos:unpack()}
+            local point = {laserPos.x, laserPos.y}
+            point[3] = (laserPos.z < -5) and (math.max(laserPos.z, -5)+laserPos.z%1) or laserPos.z
+
             local node, dist_squared = kdtree:nearestNeighbor(point)
 
-            if node == nil or dist_squared > (minDist_squared - (node.point[3]-point[3])^2) then
+            if node == nil or dist_squared > minDist_squared - (node.point[3]-point[3])^2 then
                 kdtree:insert(point)
 
                 laserOutput = point

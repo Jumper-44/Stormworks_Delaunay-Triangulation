@@ -166,7 +166,7 @@ local Color = function(normal, ...)
         Dot(normal, LIGHT_DIRECTION),
         0, nil
 
-    for _,v in ipairs({...}) do if v.z < 0 then verticesUnderWater = verticesUnderWater + 1 end end
+    for _,v in ipairs({...}) do if v.z <= 0 then verticesUnderWater = verticesUnderWater + 1 end end
 
     if verticesUnderWater > 1 then color = colorPalette.water else color = colorPalette.ground end
 
