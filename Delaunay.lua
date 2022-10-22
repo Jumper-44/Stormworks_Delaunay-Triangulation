@@ -157,10 +157,6 @@ local GetCircumCircle = function(a,b,c)
     }
 end
 
-local colorPalette = {
-    water={flat = Vec3(0,0,255), steep = Vec3(0,150,255)},
-    ground={flat = Vec3(0,255,0), steep = Vec3(255,200,0)}
-}
 local Color = function(normal, ...)
     local dot, verticesUnderWater, color =
         Dot(normal, LIGHT_DIRECTION),
@@ -168,7 +164,11 @@ local Color = function(normal, ...)
 
     for _,v in ipairs({...}) do if v.z <= 0 then verticesUnderWater = verticesUnderWater + 1 end end
 
-    if verticesUnderWater > 1 then color = colorPalette.water else color = colorPalette.ground end
+    if verticesUnderWater > 1 then
+        color = {flat = Vec3(0,0,255), steep = Vec3(0,150,255)} -- water
+    else
+        color = {flat = Vec3(0,255,0), steep = Vec3(255,200,0)} -- ground
+    end
 
     dot = dot*dot
     return Scale( Add(Scale(color.flat, dot), Scale(color.steep, 1-dot)), dot*dot*0.9 + 0.1 )
