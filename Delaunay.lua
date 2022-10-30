@@ -157,12 +157,12 @@ local GetCircumCircle = function(a,b,c)
     }
 end
 
-local Color = function(normal, ...)
+local Color = function(normal, vertices)
     local dot, verticesUnderWater, color =
         Dot(normal, LIGHT_DIRECTION),
         0, nil
 
-    for _,v in ipairs({...}) do if v.z <= 0 then verticesUnderWater = verticesUnderWater + 1 end end
+    for i = 1, 3 do if vertices[i].z <= 0 then verticesUnderWater = verticesUnderWater + 1 end end
 
     if verticesUnderWater > 1 then
         color = {flat = Vec3(0,0,255), steep = Vec3(0,150,255)} -- water
@@ -189,7 +189,7 @@ return {
     v2=CCW and p2 or p3;
     v3=CCW and p3 or p2;
     circle = GetCircumCircle(p1,p2,p3);
-    color = Color(normal, p1,p2,p3)
+    color = Color(normal, {p1,p2,p3})
 } end
 
 local Delaunay = function() return {
