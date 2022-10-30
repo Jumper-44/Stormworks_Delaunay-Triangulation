@@ -193,8 +193,6 @@ return {
 } end
 
 local Delaunay = function() return {
-    trianglesMesh = {}; -- calcMesh() will populate this
-
     vertices = {};
     n_vertices = 0;
 
@@ -243,23 +241,7 @@ local Delaunay = function() return {
         end
 
         self.n_vertices = end_pos
-    end;
-
-    calcMesh = function(self) -- The step to remove the triangles which shares a vertex with the Supertriangle
-        local n = 1 -- Asuming triangleMesh has the same or less triangles than new set, so just overwriting existing set.
-
-        for i = 2, #self.triangles do
-            if not (
-                self.triangles[i].v1.id == 0 or
-                self.triangles[i].v2.id == 0 or
-                self.triangles[i].v3.id == 0 )
-            then
-                self.trianglesMesh[n] = self.triangles[i]
-                n = n+1
-            end
-        end
     end
-
 } end
 --#endregion Delaunay
 
@@ -293,7 +275,6 @@ function onTick()
         if point[1] ~= 0 and point[2] ~= 0 then
             delaunay.vertices[#delaunay.vertices + 1] = Point( table.unpack(point) )
             delaunay:triangulate()
-            delaunay:calcMesh()
         end
 
     end
@@ -310,8 +291,8 @@ function onDraw()
         0
 
         --#region drawTriangle
-        if #delaunay.trianglesMesh > 0 then
-            local triangles = WorldToScreen(vertex_buffer, delaunay.vertices, delaunay.trianglesMesh, cameraTransform_world)
+        if #delaunay.triangles > 0 then
+            local triangles = WorldToScreen(vertex_buffer, delaunay.vertices, delaunay.triangles, cameraTransform_world)
 
             for i = 1, #triangles do
                 local triangle = triangles[i]
@@ -330,7 +311,7 @@ function onDraw()
 
         setColor(255,255,255,125)
         screen.drawText(0,130,"Alpha: "..alpha)
-        screen.drawText(0,140,"#Triangles: "..#delaunay.trianglesMesh)
+        screen.drawText(0,140,"#Triangles: "..#delaunay.triangles)
         screen.drawText(0,150,"#DrawTriangles: "..currentDrawnTriangles)
     end
 end
