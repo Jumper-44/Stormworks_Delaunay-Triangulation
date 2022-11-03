@@ -161,6 +161,67 @@ StaticTable = function(...) return {
 } end
 --#endregion StaticTable function
 
+--#region QuadTree
+local Quad = function(centerX, centerY, size) return {
+    center = {x=centerX, y=centerY},
+    size = size,
+    quadrant = {}
+} end
+
+-- Specifically for triangles in which none overlaps. No duplicates in tree. Not normal boundary checking.
+QuadTree = function(centerX, centerY, size) return {
+    tree = Quad(centerX, centerY, size);
+
+    -- Example: quadTree:insert(quadTree.tree, triangle), in which triangle = {v1=v1, v2=v2, v3=v3}
+    insert = function(self, root, triangle, prevRoot)
+
+        local x_positive, y_positive, rootCenterX, rootCenterY, rootSize =
+            0, 0, -- if a vertex is greater than their respective axis root.center.x|y then x|y_positive is incremented
+            root.center.x,
+            root.center.y,
+            root.size
+
+        for i = 1, 3 do
+            if triangle["v"..i].x >= rootCenterX then x_positive = x_positive + 1 end
+            if triangle["v"..i].y >= rootCenterY then y_positive = y_positive + 1 end
+        end
+
+        if x_positive%3 == 0 and y_positive%3 == 0 then
+            local quadrant = (y_positive==3 and 1 or 3) + (x_positive==y_positive and 0 or 1)
+
+            if root.quadrant[quadrant] then
+                self:insert(root.quadrant[quadrant], triangle, root)
+            else
+                root.quadrant[quadrant] = Quad(
+                    rootCenterX + (x_positive==3 and rootSize or -rootSize),
+                    rootCenterY + (y_positive==3 and rootSize or -rootSize),
+                    rootSize*0.5
+                )
+                self:insert(root.quadrant[quadrant], triangle, root)
+            end
+
+        else
+            if prevRoot then
+                prevRoot[#prevRoot + 1] = triangle
+            else
+                root[#root + 1] = triangle
+            end
+        end
+
+    end;
+
+    -- Example: quadTree:remove(triangle), in which triangle has a reference to which root it lies in
+    remove = function(triangle)
+
+    end;
+
+    -- Searches which triangle the point lies in, example: quadTree:search(quadTree.tree, point), in which point = {x=x, y=y}; Returns root and triangle reference
+    search = function(self, root, point)
+
+    end
+} end
+--#endregion QuadTree
+
 --#region Delaunay
 local GetCircumCircle = function(a,b,c)
     local dx_ab, dy_ab, dx_ac, dy_ac =
@@ -313,10 +374,10 @@ function onDraw()
     if renderOn then
 
         local setColor, drawTriangleF, drawTriangle, currentDrawnTriangles =
-        screen.setColor,
-        screen.drawTriangleF,
-        screen.drawTriangle,
-        0
+            screen.setColor,
+            screen.drawTriangleF,
+            screen.drawTriangle,
+            0
 
         --#region drawTriangle
         if #delaunay.triangles > 0 then
