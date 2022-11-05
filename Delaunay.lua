@@ -163,54 +163,51 @@ StaticTable = function(...) return {
 
 --#region QuadTree
 local Quad = function(centerX, centerY, size) return {
-    center = {x=centerX, y=centerY},
-    size = size,
-    quadrant = {}
+        centerX = centerX,
+        centerY = centerY,
+        size = size,
+        quadrant = {}
 } end
 
--- Specifically for triangles in which none overlaps. No duplicates in tree. Not normal boundary checking.
+-- Specifically for triangles in which none overlaps. No duplicates in tree. Not normal quad boundary checking.
 QuadTree = function(centerX, centerY, size) return {
     tree = Quad(centerX, centerY, size);
 
-    -- Example: quadTree:insert(quadTree.tree, triangle), in which triangle = {v1=v1, v2=v2, v3=v3}
-    insert = function(self, root, triangle, prevRoot)
-
-        local x_positive, y_positive, rootCenterX, rootCenterY, rootSize =
-            0, 0, -- if a vertex is greater than their respective axis root.center.x|y then x|y_positive is incremented
-            root.center.x,
-            root.center.y,
-            root.size
+    -- Example: quadTree:insert(quadTree.tree, triangle, boundaryCheck(quadTree.tree, triangle) ), in which triangle = {v1=v1, v2=v2, v3=v3}
+    insert = function(self, root, triangle)
+        local x_positive, y_positive, vertices =
+            0, 0,
+            {triangle.v1, triangle.v2, triangle.v3}
 
         for i = 1, 3 do
-            if triangle["v"..i].x >= rootCenterX then x_positive = x_positive + 1 end
-            if triangle["v"..i].y >= rootCenterY then y_positive = y_positive + 1 end
+            if vertices[i].x >= root.centerX then x_positive = x_positive + 1 end
+            if vertices[i].y >= root.centerY then y_positive = y_positive + 1 end
         end
 
+        -- if x|y_positive%3 is not 0 then the triangle is overlapping with other quadrants
         if x_positive%3 == 0 and y_positive%3 == 0 then
-            local quadrant = (y_positive==3 and 1 or 3) + (x_positive==y_positive and 0 or 1)
+            local quadrant, rootSize =
+                (y_positive==3 and 1 or 3) + (x_positive==y_positive and 0 or 1),
+                root.size
 
             if root.quadrant[quadrant] then
-                self:insert(root.quadrant[quadrant], triangle, root)
+                self:insert(root.quadrant[quadrant], triangle)
             else
                 root.quadrant[quadrant] = Quad(
-                    rootCenterX + (x_positive==3 and rootSize or -rootSize),
-                    rootCenterY + (y_positive==3 and rootSize or -rootSize),
+                    root.centerX + (x_positive==3 and rootSize or -rootSize),
+                    root.centerY + (y_positive==3 and rootSize or -rootSize),
                     rootSize*0.5
                 )
-                self:insert(root.quadrant[quadrant], triangle, root)
+                self:insert(root.quadrant[quadrant], triangle)
             end
 
         else
-            if prevRoot then
-                prevRoot[#prevRoot + 1] = triangle
-            else
-                root[#root + 1] = triangle
-            end
+            root[#root + 1] = triangle
         end
 
     end;
 
-    -- Example: quadTree:remove(triangle), in which triangle has a reference to which root it lies in
+    -- Example: quadTree:remove(triangle), in which triangle has a reference to which root it lies in (???)
     remove = function(triangle)
 
     end;
@@ -218,7 +215,8 @@ QuadTree = function(centerX, centerY, size) return {
     -- Searches which triangle the point lies in, example: quadTree:search(quadTree.tree, point), in which point = {x=x, y=y}; Returns root and triangle reference
     search = function(self, root, point)
 
-    end
+    end;
+
 } end
 --#endregion QuadTree
 
