@@ -169,6 +169,20 @@ local Quad = function(centerX, centerY, size) return {
         quadrant = {}
 } end
 
+local isPointInTriangle = function(s, a, b, c)
+    local as_x, as_y, s_ab =
+        s.x - a.x,
+        s.y - a.x,
+        nil
+
+    s_ab = (b.x - a.x) * as_y - (b.y - a.y) * as_x > 0
+
+    if ((c.x - a.x) * as_y - (c.y - a.y) * as_x > 0 == s_ab) then return false end
+    if ((c.x - b.x) * (s.y - b.y) - (c.y - b.y)*(s.x - b.x) > 0 ~= s_ab) then return false end
+
+    return true
+end
+
 -- Specifically for triangles in which none overlaps. No duplicates in tree. Not normal quad boundary checking.
 QuadTree = function(centerX, centerY, size) return {
     tree = Quad(centerX, centerY, size);
@@ -204,19 +218,22 @@ QuadTree = function(centerX, centerY, size) return {
         else
             root[#root + 1] = triangle
         end
-
     end;
 
-    -- Example: quadTree:remove(triangle), in which triangle has a reference to which root it lies in (???)
-    remove = function(triangle)
+    -- Finds triangle in which the point lies in, which gets removed from quadTree and returned
+    searchAndRemove = function(self, root, point)
+        for i = 1, #root do
+            if isPointInTriangle(point, root[i].v1, root[i].v2, root[i].v3) then
+                return table.remove(root, i)
+            end
+        end
 
-    end;
+        local quadrant = (point.x>root.centerX and 1 or 3) + (point.x>root.centerX==(point.y>root.centerY) and 0 or 1)
 
-    -- Searches which triangle the point lies in, example: quadTree:search(quadTree.tree, point), in which point = {x=x, y=y}; Returns root and triangle reference
-    search = function(self, root, point)
-
-    end;
-
+        if root.quadrant[quadrant] then
+           return self:searchAndRemove(root.quadrant[quadrant], point)
+        end
+    end
 } end
 --#endregion QuadTree
 
