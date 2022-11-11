@@ -122,7 +122,7 @@ WorldToScreen = function(vertex_buffer, vertices, triangles, cameraTransform)
         end
     end
 
-     -- painter's algorithm
+    -- painter's algorithm
     table.sort(tri,
         function(triangle1,triangle2)
             return triangle1.depth > triangle2.depth
@@ -187,7 +187,7 @@ end
 QuadTree = function(centerX, centerY, size) return {
     tree = Quad(centerX, centerY, size);
 
-    -- Example: quadTree:insert(quadTree.tree, triangle, boundaryCheck(quadTree.tree, triangle) ), in which triangle = {v1=v1, v2=v2, v3=v3}
+    -- Example: quadTree:insert(quadTree.tree, triangle), in which triangle = {v1=v1, v2=v2, v3=v3}
     insert = function(self, root, triangle)
         local x_positive, y_positive, vertices =
             0, 0,
@@ -232,6 +232,15 @@ QuadTree = function(centerX, centerY, size) return {
 
         if root.quadrant[quadrant] then
            return self:searchAndRemove(root.quadrant[quadrant], point)
+        end
+    end;
+
+    remove = function(root, triangle) -- The root the triangle lies in and the triangle itself
+        for i = 1, #root do
+            if #root[i] == triangle then
+                table.remove(root, i)
+                return
+            end
         end
     end
 } end
