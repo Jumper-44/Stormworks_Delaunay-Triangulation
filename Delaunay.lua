@@ -133,34 +133,6 @@ WorldToScreen = function(vertex_buffer, vertices, triangles, cameraTransform)
 end
 --#endregion Rendering
 
---#region StaticTable function
--- Use table:insert and table:remove instead of manual insertion/deletion
--- When removing an index it either pops it as normal, or mark it as empty in 'emptyIndex', so it doesn't move every index over it one down
--- Probably gonna remove due to char limit, so not implemented yet
-StaticTable = function(...) return {
-    emptyIndex = {};
-
-    insert = function(self, data)
-        if #self.emptyIndex == 0 then
-            self[#self + 1] = data
-        else
-            self[ self.emptyIndex[#self.emptyIndex] ] = data
-            self.emptyIndex[#self.emptyIndex] = nil
-        end
-    end;
-
-    remove = function(self, index)
-        if index == nil or #self == index then -- if index is nil or equal size then pop the table
-            self[#self] = nil
-        elseif index < #self then
-            -- self[index] = false  -- clears the removed index, but I don't need to
-            self.emptyIndex[#self.emptyIndex + 1] = index
-        end
-    end;
-    ... -- Occupy upon creation
-} end
---#endregion StaticTable function
-
 --#region QuadTree
 local Quad = function(centerX, centerY, size) return {
         centerX = centerX,
@@ -235,7 +207,8 @@ QuadTree = function(centerX, centerY, size) return {
         end
     end;
 
-    remove = function(root, triangle) -- The root the triangle lies in and the triangle itself
+    -- The root the triangle lies in and the triangle itself
+    remove = function(root, triangle)
         for i = 1, #root do
             if #root[i] == triangle then
                 table.remove(root, i)
