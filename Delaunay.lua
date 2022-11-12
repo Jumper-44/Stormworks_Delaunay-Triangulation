@@ -141,6 +141,7 @@ local Quad = function(centerX, centerY, size) return {
         quadrant = {}
 } end
 
+--[[
 local isPointInTriangle = function(s, a, b, c)
     local as_x, as_y, s_ab =
         s.x - a.x,
@@ -154,6 +155,7 @@ local isPointInTriangle = function(s, a, b, c)
 
     return true
 end
+--]]
 
 -- Specifically for triangles in which none overlaps. No duplicates in tree. Not normal quad boundary checking.
 QuadTree = function(centerX, centerY, size) return {
@@ -161,8 +163,8 @@ QuadTree = function(centerX, centerY, size) return {
 
     -- Example: quadTree:insert(quadTree.tree, triangle), in which triangle = {v1=v1, v2=v2, v3=v3}
     insert = function(self, root, triangle)
-        local x_positive, y_positive, vertices =
-            0, 0,
+        local x_positive, y_positive, rootSize, vertices =
+            0, 0, root.size,
             {triangle.v1, triangle.v2, triangle.v3}
 
         for i = 1, 3 do
@@ -171,10 +173,8 @@ QuadTree = function(centerX, centerY, size) return {
         end
 
         -- if x|y_positive%3 is not 0 then the triangle is overlapping with other quadrants
-        if x_positive%3 == 0 and y_positive%3 == 0 then
-            local quadrant, rootSize =
-                (y_positive==3 and 1 or 3) + (x_positive==y_positive and 0 or 1),
-                root.size
+        if x_positive%3 == 0 and y_positive%3 == 0 and rootSize > 20 then
+            local quadrant = (y_positive==3 and 1 or 3) + (x_positive==y_positive and 0 or 1)
 
             if root.quadrant[quadrant] then
                 self:insert(root.quadrant[quadrant], triangle)
@@ -192,10 +192,14 @@ QuadTree = function(centerX, centerY, size) return {
         end
     end;
 
-    -- Finds triangle in which the point lies in, which gets removed from quadTree and returned
+    -- Finds the first triangle in which the point lies within the circumcircle. The found triangle gets removed from tree and returned
     searchAndRemove = function(self, root, point)
         for i = 1, #root do
-            if isPointInTriangle(point, root[i].v1, root[i].v2, root[i].v3) then
+            local dx, dy =
+                root[i].circle.x - point.x,
+                root[i].circle.y - point.y
+
+            if dx * dx + dy * dy <= root[i].circle.r then
                 return table.remove(root, i)
             end
         end
@@ -321,8 +325,7 @@ local Delaunay = function() return {
             end
 
             for j = 1, #edges do
-                local n = #self.triangles
-                self.triangles[n + 1] = Triangle(edges[j].p1, edges[j].p2, self.vertices[i])
+                self.triangles[#self.triangles + 1] = Triangle(edges[j].p1, edges[j].p2, self.vertices[i])
             end
         end
 
