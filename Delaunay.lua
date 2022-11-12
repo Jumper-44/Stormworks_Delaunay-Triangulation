@@ -189,6 +189,8 @@ QuadTree = function(centerX, centerY, size) return {
             end
 
         else
+            -- Triangle has a reference to the root it lies in and adds it to said root
+            triangle.root = root
             root[#root + 1] = triangle
         end
     end;
@@ -215,9 +217,9 @@ QuadTree = function(centerX, centerY, size) return {
     -- The root the triangle lies in and the triangle itself
     remove = function(root, triangle)
         for i = 1, #root do
-            if #root[i] == triangle then
+            if root[i] == triangle then
                 table.remove(root, i)
-                return
+                break
             end
         end
     end
