@@ -167,6 +167,7 @@ QuadTree = function(centerX, centerY, size) return {
             0, 0, root.size,
             {triangle.v1, triangle.v2, triangle.v3}
 
+        -- Checking boundary for each point
         for i = 1, 3 do
             if vertices[i].x >= root.centerX then x_positive = x_positive + 1 end
             if vertices[i].y >= root.centerY then y_positive = y_positive + 1 end
@@ -313,14 +314,13 @@ local Delaunay = function() return {
             for j = #edges - 1, 1, -1 do
                 for k = #edges, j + 1, -1 do
 
-                    if edges[j] and edges[k] and
-                    ((edges[j].p1 == edges[k].p1 and edges[j].p2 == edges[k].p2)
-                    or (edges[j].p1 == edges[k].p2 and edges[j].p2 == edges[k].p1))
+                    if (edges[j].p1 == edges[k].p1 and edges[j].p2 == edges[k].p2)
+                    or (edges[j].p1 == edges[k].p2 and edges[j].p2 == edges[k].p1)
                     then
                         table.remove(edges, j)
                         table.remove(edges, k-1)
+                        break
                     end
-
                 end
             end
 
