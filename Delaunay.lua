@@ -107,7 +107,7 @@ WorldToScreen = function(vertex_buffer, vertices, triangles, cameraTransform)
 
     for i=1, #triangles do
         local triangle = triangles[i]
-        local v1,v2,v3 = vertex_buffer[triangle.v1.id], vertex_buffer[triangle.v2.id], vertex_buffer[triangle.v3.id]
+        local v1,v2,v3 = vertex_buffer[triangle[1].id], vertex_buffer[triangle[2].id], vertex_buffer[triangle[3].id]
 
         if v1 and v2 and v3 then -- if all vertices are within the near and far plane
             if v1.isIn or v2.isIn or v3.isIn then -- if atleast 1 visible vertex
@@ -161,16 +161,14 @@ end
 QuadTree = function(centerX, centerY, size) return {
     tree = Quad(centerX, centerY, size);
 
-    -- Example: quadTree:insert(quadTree.tree, triangle), in which triangle = {v1=v1, v2=v2, v3=v3}
+    -- Example: quadTree:insert(quadTree.tree, triangle)
     insert = function(self, root, triangle)
-        local x_positive, y_positive, rootSize, vertices =
-            0, 0, root.size,
-            {triangle.v1, triangle.v2, triangle.v3}
+        local x_positive, y_positive, rootSize = 0, 0, root.size
 
-        -- Checking boundary for each point
+        -- Checking boundary for each vertex
         for i = 1, 3 do
-            if vertices[i].x >= root.centerX then x_positive = x_positive + 1 end
-            if vertices[i].y >= root.centerY then y_positive = y_positive + 1 end
+            if triangle[i].x >= root.centerX then x_positive = x_positive + 1 end
+            if triangle[i].y >= root.centerY then y_positive = y_positive + 1 end
         end
 
         -- if x|y_positive%3 is not 0 then the triangle is overlapping with other quadrants
@@ -189,28 +187,28 @@ QuadTree = function(centerX, centerY, size) return {
             end
 
         else
-            -- Triangle has a reference to the root it lies in and adds it to said root
+            -- Triangle get a reference to the root it lies in and adds it to said root
             triangle.root = root
             root[#root + 1] = triangle
         end
     end;
 
-    -- Finds the first triangle in which the point lies within the circumcircle. The found triangle gets removed from tree and returned
-    searchAndRemove = function(self, root, point)
+    -- Finds the first triangle in which the point lies within the circumcircle and returns reference to triangle
+    search = function(self, root, point)
         for i = 1, #root do
             local dx, dy =
                 root[i].circle.x - point.x,
                 root[i].circle.y - point.y
 
             if dx * dx + dy * dy <= root[i].circle.r then
-                return table.remove(root, i)
+                return root[i]
             end
         end
 
         local quadrant = (point.x>root.centerX and 1 or 3) + (point.x>root.centerX==(point.y>root.centerY) and 0 or 1)
 
         if root.quadrant[quadrant] then
-           return self:searchAndRemove(root.quadrant[quadrant], point)
+           return self:search(root.quadrant[quadrant], point)
         end
     end;
 
@@ -267,68 +265,130 @@ local Color = function(normal, vertices)
     return Scale( Add(Scale(color.flat, dot), Scale(color.steep, 1-dot)), dot*dot*0.9 + 0.1 )
 end
 
+
+local Point, Triangle =
 -- Point Class
-local Point = function(x,y,z,id) return {
-    x=x; y=y; z=z or 0; id=id or 0
-} end
+    function(x,y,z,id) return {
+        x=x; y=y; z=z or 0; id=id or 0
+    } end,
 
 -- Triangle Class
-local Triangle = function(p1,p2,p3)
-    local normal = Normalize( Cross(Sub(p1,p2), Sub(p2,p3)) )
-    local CCW = normal.z < 0
+    function(p1,p2,p3, ...)
+        local normal = Normalize( Cross(Sub(p1,p2), Sub(p2,p3)) )
+        local CCW = normal.z < 0
 
-return {
-    v1=p1;
-    v2=CCW and p2 or p3;
-    v3=CCW and p3 or p2;
-    circle = GetCircumCircle(p1,p2,p3);
-    color = Color(normal, {p1,p2,p3})
-} end
+    return {
+        p1;
+        CCW and p2 or p3;
+        CCW and p3 or p2;
+        circle = GetCircumCircle(p1,p2,p3);
+        color = Color(normal, {p1,p2,p3});
+        neighbor = {...};
+    --  root = nil;
+    } end
 
-local Delaunay = function() return {
-    vertices = {};
+Delaunay = function(centerX, centerY, size)
+    local vertices, quadTree =
+        {},
+        QuadTree(centerX, centerY, size)
+
+    quadTree:insert(quadTree.tree, Triangle(Point(-9E5,-9E5), Point(9E5,-9E5), Point(0,9E5), false,false,false))
+
+    return {
+    vertices = vertices;
     n_vertices = 0;
-
-    triangles = { Triangle(Point(-9E5,-9E5), Point(9E5,-9E5), Point(0,9E5)) }; -- Supertriangle
+    quadTree = quadTree;
 
     triangulate = function(self)
-        local end_pos = #self.vertices
+        local end_pos = #vertices
 
         for i = end_pos-(end_pos - self.n_vertices) + 1, end_pos do
-            local edges, currentVertex = {}, self.vertices[i]
+            local currentVertex = vertices[i]
+            local new_triangles, triangle_check_queue, id = {}, {quadTree:search(quadTree.tree, currentVertex)}, 1
+
             currentVertex.id = i
 
-            for j = #self.triangles, 1, -1 do
-                local currentTriangle = self.triangles[j]
+            -- Depends on CCW winding order for the triangles.
+            while id > 0 do
+                local currentTriangle = triangle_check_queue[id]
 
-                local dx,dy =
-                    currentTriangle.circle.x - currentVertex.x,
-                    currentTriangle.circle.y - currentVertex.y
+                for j = 1, 3 do
+                    local currentNeighbor = currentTriangle.neighbor[j]
 
-                if dx * dx + dy * dy <= currentTriangle.circle.r then
-                    edges[#edges + 1] = {p1=currentTriangle.v1, p2=currentTriangle.v2}
-                    edges[#edges + 1] = {p1=currentTriangle.v2, p2=currentTriangle.v3}
-                    edges[#edges + 1] = {p1=currentTriangle.v3, p2=currentTriangle.v1}
-                    table.remove(self.triangles, j)
+                    if currentNeighbor then
+                        local dx,dy =
+                            currentNeighbor.circle.x - currentVertex.x,
+                            currentNeighbor.circle.y - currentVertex.y
+
+                        if dx * dx + dy * dy <= currentNeighbor.circle.r then
+                            for k = 1, 3 do
+                                -- If neighboring triangle don't have a reference to current, then the neigboring triangle has already been checked, and won't be added to queue again
+                                if currentTriangle == currentNeighbor.neighbor[k] then
+                                    triangle_check_queue[#triangle_check_queue + 1] = currentNeighbor
+                                    currentNeighbor.neighbor[k] = nil
+                                    break
+                                end
+                            end
+                        else
+                            local new_triangle = Triangle(
+                                currentVertex,
+                                currentTriangle[j],
+                                currentTriangle[j%3 + 1],
+
+                                nil, currentNeighbor
+                            )
+
+                            new_triangles[#new_triangles + 1] = new_triangle
+
+                            for k = 1, 3 do
+                                if currentTriangle == currentNeighbor.neighbor[k] then
+                                    currentNeighbor.neighbor[k] = new_triangle
+                                    break
+                                end
+                            end
+                        end
+                    elseif currentNeighbor == false then
+                        new_triangles[#new_triangles + 1] = Triangle(
+                            currentVertex,
+                            currentTriangle[j],
+                            currentTriangle[j%3 + 1],
+
+                            nil, false
+                        )
+                    end
+
+                    -- Removes reference to other tables/triangles, so garbagecollection can collect
+                    -- Also currently the same triangle can be added to the queue more than one time, so it only process its neighbor once.
+                    currentTriangle.neighbor[j] = nil
                 end
+
+                -- Remove triangle from quadTree and queue and update 'id'
+                quadTree.remove(currentTriangle.root, currentTriangle)
+                table.remove(triangle_check_queue, id)
+                id = #triangle_check_queue
             end
 
-            for j = #edges - 1, 1, -1 do
-                for k = #edges, j + 1, -1 do
 
-                    if (edges[j].p1 == edges[k].p1 and edges[j].p2 == edges[k].p2)
-                    or (edges[j].p1 == edges[k].p2 and edges[j].p2 == edges[k].p1)
-                    then
-                        table.remove(edges, j)
-                        table.remove(edges, k-1)
-                        break
+            -- Added references to new neighboring triangles
+            quadTree:insert(quadTree.tree, new_triangles[#new_triangles])
+
+            for j = 1, #new_triangles - 1 do
+                local currentTri = new_triangles[j]
+                quadTree:insert(quadTree.tree, currentTri)
+
+                for k = j + 1, #new_triangles do
+                    local otherTri = new_triangles[k]
+
+                    if currentTri[2] == otherTri[3] then
+                        currentTri.neighbor[1] = otherTri
+                        otherTri.neighbor[3] = currentTri
+                    elseif currentTri[3] == otherTri[2] then
+                        currentTri.neighbor[3] = otherTri
+                        otherTri.neighbor[1] = currentTri
                     end
                 end
             end
 
-            for j = 1, #edges do
-                self.triangles[#self.triangles + 1] = Triangle(edges[j].p1, edges[j].p2, self.vertices[i])
-            end
         end
 
         self.n_vertices = end_pos
