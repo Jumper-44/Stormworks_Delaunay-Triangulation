@@ -205,7 +205,7 @@ QuadTree = function(centerX, centerY, size) return {
             end
         end
 
-        local quadrant = (point.x>root.centerX and 1 or 3) + (point.x>root.centerX==(point.y>root.centerY) and 0 or 1)
+        local quadrant = (point.y>=root.centerY and 1 or 3) + ((point.x>=root.centerX)==(point.y>=root.centerY) and 0 or 1)
 
         if root.quadrant[quadrant] then
            return self:search(root.quadrant[quadrant], point)
