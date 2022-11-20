@@ -59,6 +59,35 @@ Sends the cameraTransform_world and laserPos to the next lua script (ingame)
 --]]
 --#endregion readme
 
+--#region Conversion
+-- Bitwise operations can only be done to integers, but also need to send the numbers as float when sending from script to script as Stormworks likes it that way.
+local function S_H_fp(a, b) -- 2 Single Float Conversion To Half Float residing in a float.
+    local function convert(f)
+        local epsilon = .000031
+        if f<epsilon and f>-epsilon then return 0 end
+
+        f = ('I'):unpack(('f'):pack(f))
+
+        return ((f>>16)&0x8000)|((((f&0x7f800000)-0x38000000)>>13)&0x7c00)|((f>>13)&0x03ff)
+    end
+
+    return ('f'):unpack(('I'):pack( convert(a)<<16 | convert(b) ))
+end
+
+--[[
+local function H_S_fp(x) -- Half Float Conversion To Single Float.
+    local function convert(h)
+        return ('f'):unpack(('I'):pack(((h&0x8000)<<16) | (((h&0x7c00)+0x1C000)<<13) | ((h&0x03FF)<<13)))
+    end
+    x = ('I'):unpack(('f'):pack(x))
+    return convert(x>>16), convert(x)
+end
+
+-- Visualizer for the usable size range of 16bit floats.
+-- https://observablehq.com/@rreusser/half-precision-floating-point-visualized
+--]]
+--#endregion Conversion
+
 --#region kdtree
 local Dist2 = function(a,b)
     local sum, dis = 0, 0
@@ -341,10 +370,14 @@ function onTick()
 
 
         -- Output cameraTransform_world
-        for i=1, 4 do
-            for j=1, 4 do
-                output.setNumber((i-1)*4 + j, cameraTransform_world[i][j])
+        -- Fils 1-6 with half floats, 7-10 with normal numbers.
+        for i=1, 3 do
+            for j=1, 2 do
+                output.setNumber((i-1)*2 + j, S_H_fp(cameraTransform_world[i][(j-1)*2+1], cameraTransform_world[i][(j-1)*2+2]))
             end
+        end
+        for i = 1, 4 do
+            output.setNumber(i+6, cameraTransform_world[4][i])
         end
         --#endregion cameraTransform_world
 
@@ -378,7 +411,8 @@ function onTick()
 
     end -- if renderOn
 
-    for i = 1, 3 do output.setNumber(i+16, laserOutput[i]) end
+    -- Outputs laserPos to 11-13
+    for i = 1, 3 do output.setNumber(i+10, laserOutput[i]) end
 end
 
 --[[ debug

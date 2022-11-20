@@ -58,6 +58,20 @@ This does the delaunay triangulation
 --]]
 --#endregion readme
 
+--#region Conversion
+-- Bitwise operations can only be done to integers, but also need to send the numbers as float when sending from script to script as Stormworks likes it that way.
+local function int32_to_uint16(a, b) -- Takes 2 int32 and converts them to uint16 residing in a single number
+	return ('f'):unpack(('I'):pack( ((a&0xffff)<<16) | (b&0xffff)) )
+end
+
+--[[
+local function uint16_to_int32(x) -- Takes a single number containing 2 uint16 and unpacks them.
+	x = ('I'):unpack(('f'):pack(x))
+	return x>>16, x&0xffff
+end
+--]]
+--#endregion Conversion
+
 --#region vec3
 local Vec3 = function(x,y,z) return {x=x, y=y, z=z} end
 
@@ -171,44 +185,24 @@ local GetCircumCircle = function(a,b,c)
     }
 end
 
-local Color = function(normal, vertices)
-    local dot, verticesUnderWater, color =
-        Dot(normal, LIGHT_DIRECTION),
-        0, nil
-
-    for i = 1, 3 do if vertices[i].z <= 0 then verticesUnderWater = verticesUnderWater + 1 end end
-
-    if verticesUnderWater > 1 then
-        color = {flat = Vec3(0,0,255), steep = Vec3(0,150,255)} -- water
-    else
-        color = {flat = Vec3(0,255,0), steep = Vec3(255,200,0)} -- ground
-    end
-
-    dot = dot*dot
-    return Scale( Add(Scale(color.flat, dot), Scale(color.steep, 1-dot)), dot*dot*0.9 + 0.1 )
-end
-
-
-local Point, Triangle =
 -- Point Class
-    function(x,y,z,id) return {
-        x=x; y=y; z=z or 0; id=id or 0
-    } end,
+local Point = function(x,y,z,id) return {
+    x=x; y=y; z=z or 0; id=id or 0
+} end
 
 -- Triangle Class
-    function(p1,p2,p3, ...)
-        local normal = Normalize( Cross(Sub(p1,p2), Sub(p2,p3)) )
-        local CCW = normal.z < 0
+local Triangle = function(p1,p2,p3, ...)
+    local normal = Normalize( Cross(Sub(p1,p2), Sub(p2,p3)) )
+    local CCW = normal.z < 0
 
-    return {
-        p1;
-        CCW and p2 or p3;
-        CCW and p3 or p2;
-        circle = GetCircumCircle(p1,p2,p3);
-        color = Color(normal, {p1,p2,p3});
-        neighbor = {...};
-    --  root = nil;
-    } end
+return {
+    p1;
+    CCW and p2 or p3;
+    CCW and p3 or p2;
+    circle = GetCircumCircle(p1,p2,p3);
+    neighbor = {...};
+--  root = nil;
+} end
 
 Delaunay = function(centerX, centerY, size)
     local vertices, quadTree =

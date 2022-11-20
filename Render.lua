@@ -61,6 +61,46 @@ This recieves triangle data from "Delaunay.lua" and renders
 --]]
 --#endregion readme
 
+--#region Conversion
+-- Bitwise operations can only be done to integers, but also need to send the numbers as float when sending from script to script as Stormworks likes it that way.
+--[[
+local function S_H_fp(a, b) -- 2 Single Float Conversion To Half Float residing in a float.
+    local function convert(f)
+        local epsilon = .000031
+        if f<epsilon and f>-epsilon then return 0 end
+
+        f = ('I'):unpack(('f'):pack(f))
+
+        return ((f>>16)&0x8000)|((((f&0x7f800000)-0x38000000)>>13)&0x7c00)|((f>>13)&0x03ff)
+    end
+
+    return ('f'):unpack(('I'):pack( convert(a)<<16 | convert(b) ))
+end
+--]]
+
+local function H_S_fp(x) -- Half Float Conversion To Single Float.
+    local function convert(h)
+        return ('f'):unpack(('I'):pack(((h&0x8000)<<16) | (((h&0x7c00)+0x1C000)<<13) | ((h&0x03FF)<<13)))
+    end
+    x = ('I'):unpack(('f'):pack(x))
+    return convert(x>>16), convert(x)
+end
+
+-- Visualizer for the usable size range of 16bit floats.
+-- https://observablehq.com/@rreusser/half-precision-floating-point-visualized
+
+--[[
+local function int32_to_uint16(a, b) -- Takes 2 int32 and converts them to uint16 residing in a single number
+	return ('f'):unpack(('I'):pack( ((a&0xffff)<<16) | (b&0xffff)) )
+end
+--]]
+
+local function uint16_to_int32(x) -- Takes a single number containing 2 uint16 and unpacks them.
+	x = ('I'):unpack(('f'):pack(x))
+	return x>>16, x&0xffff
+end
+--#endregion Conversion
+
 --#region vec3
 local Vec3 = function(x,y,z) return {x=x, y=y, z=z} end
 
@@ -74,6 +114,64 @@ local Add, Sub, Scale, Dot, Cross =
 local Len = function(a) return Dot(a,a)^.5 end
 local Normalize = function(a) return Scale(a, 1/Len(a)) end
 --#endregion vec3
+
+--#region Rendering
+w,h = 160,160 -- Screen Pixels
+local cx,cy = w/2,h/2
+local SCREEN, LIGHT_DIRECTION =
+    {centerX = cx, centerY = cy},
+    Normalize(Vec3(0, 0.1, -1))
+
+WorldToScreen = function(vertex_buffer, vertices, triangles, cameraTransform)
+    local tri = {}
+
+    for i=1, #vertices do
+        local x,y,z = vertices[i].x, vertices[i].y, vertices[i].z
+
+        local X,Y,Z,W =
+            cameraTransform[1]*x + cameraTransform[5]*y + cameraTransform[9]*z + cameraTransform[13],
+            cameraTransform[2]*x + cameraTransform[6]*y + cameraTransform[10]*z + cameraTransform[14],
+            cameraTransform[3]*x + cameraTransform[7]*y + cameraTransform[11]*z + cameraTransform[15],
+            cameraTransform[4]*x + cameraTransform[8]*y + cameraTransform[12]*z + cameraTransform[16]
+
+        if (0<=Z and Z<=W) then --clip and discard points       -- (-W<=X and X<=W) and (-W<=Y and Y<=W) and (0<=Z and Z<=W)
+            local w = 1/W
+            vertex_buffer[i] = {
+                x = X*w*cx+SCREEN.centerX, y = Y*w*cy+SCREEN.centerY, z = Z*w,
+                isIn = (-W<=X and X<=W) and (-W<=Y and Y<=W)
+            }
+        else -- x & y are screen coordinates, z is depth
+            vertex_buffer[i] = false
+        end
+    end
+
+    for i=1, #triangles do
+        local triangle = triangles[i]
+        local v1,v2,v3 = vertex_buffer[triangle[1].id], vertex_buffer[triangle[2].id], vertex_buffer[triangle[3].id]
+
+        if v1 and v2 and v3 then -- if all vertices are within the near and far plane
+            if v1.isIn or v2.isIn or v3.isIn then -- if atleast 1 visible vertex
+                if (v1.x*v2.y - v2.x*v1.y + v2.x*v3.y - v3.x*v2.y + v3.x*v1.y - v1.x*v3.y) > 0 then -- if the triangle is facing the camera, checks for CCW
+                    tri[#tri + 1] = {
+                        v1=v1, v2=v2, v3=v3;
+                        color = triangle.color;
+                        depth = (1/3)*(v1.z + v2.z + v3.z)
+                    }
+                end
+            end
+        end
+    end
+
+    -- painter's algorithm
+    table.sort(tri,
+        function(triangle1,triangle2)
+            return triangle1.depth > triangle2.depth
+        end
+    )
+
+    return tri
+end
+--#endregion Rendering
 
 --#region QuadTree
 local Quad = function(centerX, centerY, size) return {
@@ -150,64 +248,43 @@ end
 } end
 --#endregion QuadTree
 
+--#region Triangle Handling
+local Color = function(normal, vertices)
+    local dot, verticesUnderWater, color =
+        Dot(normal, LIGHT_DIRECTION),
+        0, nil
 
---#region Rendering
-w,h = 160,160 -- Screen Pixels
-local cx,cy = w/2,h/2
-local SCREEN, LIGHT_DIRECTION =
-    {centerX = cx, centerY = cy},
-    Normalize(Vec3(0, 0.1, -1))
+    for i = 1, 3 do if vertices[i].z <= 0 then verticesUnderWater = verticesUnderWater + 1 end end
 
-WorldToScreen = function(vertex_buffer, vertices, triangles, cameraTransform)
-    local tri = {}
-
-    for i=1, #vertices do
-        local x,y,z = vertices[i].x, vertices[i].y, vertices[i].z
-
-        local X,Y,Z,W =
-            cameraTransform[1]*x + cameraTransform[5]*y + cameraTransform[9]*z + cameraTransform[13],
-            cameraTransform[2]*x + cameraTransform[6]*y + cameraTransform[10]*z + cameraTransform[14],
-            cameraTransform[3]*x + cameraTransform[7]*y + cameraTransform[11]*z + cameraTransform[15],
-            cameraTransform[4]*x + cameraTransform[8]*y + cameraTransform[12]*z + cameraTransform[16]
-
-        if (0<=Z and Z<=W) then --clip and discard points       -- (-W<=X and X<=W) and (-W<=Y and Y<=W) and (0<=Z and Z<=W)
-            local w = 1/W
-            vertex_buffer[i] = {
-                x = X*w*cx+SCREEN.centerX, y = Y*w*cy+SCREEN.centerY, z = Z*w,
-                isIn = (-W<=X and X<=W) and (-W<=Y and Y<=W)
-            }
-        else -- x & y are screen coordinates, z is depth
-            vertex_buffer[i] = false
-        end
+    if verticesUnderWater > 1 then
+        color = {flat = Vec3(0,0,255), steep = Vec3(0,150,255)} -- water
+    else
+        color = {flat = Vec3(0,255,0), steep = Vec3(255,200,0)} -- ground
     end
 
-    for i=1, #triangles do
-        local triangle = triangles[i]
-        local v1,v2,v3 = vertex_buffer[triangle[1].id], vertex_buffer[triangle[2].id], vertex_buffer[triangle[3].id]
-
-        if v1 and v2 and v3 then -- if all vertices are within the near and far plane
-            if v1.isIn or v2.isIn or v3.isIn then -- if atleast 1 visible vertex
-                if (v1.x*v2.y - v2.x*v1.y + v2.x*v3.y - v3.x*v2.y + v3.x*v1.y - v1.x*v3.y) > 0 then -- if the triangle is facing the camera, checks for CCW
-                    tri[#tri + 1] = {
-                        v1=v1, v2=v2, v3=v3;
-                        color = triangle.color;
-                        depth = (1/3)*(v1.z + v2.z + v3.z)
-                    }
-                end
-            end
-        end
-    end
-
-    -- painter's algorithm
-    table.sort(tri,
-        function(triangle1,triangle2)
-            return triangle1.depth > triangle2.depth
-        end
-    )
-
-    return tri
+    dot = dot*dot
+    return Scale( Add(Scale(color.flat, dot), Scale(color.steep, 1-dot)), dot*dot*0.9 + 0.1 )
 end
---#endregion Rendering
+
+-- Point Class
+local Point = function(x,y,z,id) return {
+    x=x; y=y; z=z or 0; id=id or 0
+} end
+
+-- Triangle Class
+local Triangle = function(p1,p2,p3)
+    local normal = Normalize( Cross(Sub(p1,p2), Sub(p2,p3)) )
+
+return {
+    p1;
+    p2; -- Triangle should be CCW winding order
+    p3;
+    color = Color(normal, {p1,p2,p3});
+--  root = nil;
+} end
+--#endregion Triangle Handling
+
+
 
 
 
