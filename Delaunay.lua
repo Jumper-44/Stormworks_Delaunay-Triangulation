@@ -52,12 +52,9 @@ end
 
 --#region readme
 --[[
-Recieves cameraTransform_world and laserPos from "CameraTransform.lua" script
+Recieves laserPos from "CameraTransform.lua" script
 
-This does the delaunay triangulation and 3d render
-
-The triangulation is O(n*n) time complexity
-See the delaunay triangulation in browser with touchscreen https://lua.flaffipony.rocks/?id=IDyvZ6wC8P
+This does the delaunay triangulation
 --]]
 --#endregion readme
 
@@ -75,64 +72,6 @@ local Len = function(a) return Dot(a,a)^.5 end
 local Normalize = function(a) return Scale(a, 1/Len(a)) end
 --#endregion vec3
 
---#region Rendering
-w,h = 160,160 -- Screen Pixels
-local cx,cy = w/2,h/2
-local SCREEN, LIGHT_DIRECTION =
-    {centerX = cx, centerY = cy},
-    Normalize(Vec3(0, 0.1, -1))
-
-WorldToScreen = function(vertex_buffer, vertices, triangles, cameraTransform)
-    local tri = {}
-
-    for i=1, #vertices do
-        local x,y,z = vertices[i].x, vertices[i].y, vertices[i].z
-
-        local X,Y,Z,W =
-            cameraTransform[1]*x + cameraTransform[5]*y + cameraTransform[9]*z + cameraTransform[13],
-            cameraTransform[2]*x + cameraTransform[6]*y + cameraTransform[10]*z + cameraTransform[14],
-            cameraTransform[3]*x + cameraTransform[7]*y + cameraTransform[11]*z + cameraTransform[15],
-            cameraTransform[4]*x + cameraTransform[8]*y + cameraTransform[12]*z + cameraTransform[16]
-
-        if (0<=Z and Z<=W) then --clip and discard points       -- (-W<=X and X<=W) and (-W<=Y and Y<=W) and (0<=Z and Z<=W)
-            local w = 1/W
-            vertex_buffer[i] = {
-                x = X*w*cx+SCREEN.centerX, y = Y*w*cy+SCREEN.centerY, z = Z*w,
-                isIn = (-W<=X and X<=W) and (-W<=Y and Y<=W)
-            }
-        else -- x & y are screen coordinates, z is depth
-            vertex_buffer[i] = false
-        end
-    end
-
-    for i=1, #triangles do
-        local triangle = triangles[i]
-        local v1,v2,v3 = vertex_buffer[triangle[1].id], vertex_buffer[triangle[2].id], vertex_buffer[triangle[3].id]
-
-        if v1 and v2 and v3 then -- if all vertices are within the near and far plane
-            if v1.isIn or v2.isIn or v3.isIn then -- if atleast 1 visible vertex
-                if (v1.x*v2.y - v2.x*v1.y + v2.x*v3.y - v3.x*v2.y + v3.x*v1.y - v1.x*v3.y) > 0 then -- if the triangle is facing the camera, checks for CCW
-                    tri[#tri + 1] = {
-                        v1=v1, v2=v2, v3=v3;
-                        color = triangle.color;
-                        depth = (1/3)*(v1.z + v2.z + v3.z)
-                    }
-                end
-            end
-        end
-    end
-
-    -- painter's algorithm
-    table.sort(tri,
-        function(triangle1,triangle2)
-            return triangle1.depth > triangle2.depth
-        end
-    )
-
-    return tri
-end
---#endregion Rendering
-
 --#region QuadTree
 local Quad = function(centerX, centerY, size) return {
         centerX = centerX,
@@ -140,22 +79,6 @@ local Quad = function(centerX, centerY, size) return {
         size = size,
         quadrant = {}
 } end
-
---[[
-local isPointInTriangle = function(s, a, b, c)
-    local as_x, as_y, s_ab =
-        s.x - a.x,
-        s.y - a.x,
-        nil
-
-    s_ab = (b.x - a.x) * as_y - (b.y - a.y) * as_x > 0
-
-    if ((c.x - a.x) * as_y - (c.y - a.y) * as_x > 0 == s_ab) then return false end
-    if ((c.x - b.x) * (s.y - b.y) - (c.y - b.y)*(s.x - b.x) > 0 ~= s_ab) then return false end
-
-    return true
-end
---]]
 
 -- Specifically for triangles in which none overlaps. No duplicates in tree. Not normal quad boundary checking.
 QuadTree = function(centerX, centerY, size) return {
@@ -398,12 +321,9 @@ Delaunay = function(centerX, centerY, size)
 
 
 --#region init
-local delaunay, cameraTransform_world, point, alpha, vertex_buffer =
+local delaunay, point =
     Delaunay(), -- delaunay
-    {}, -- cameraTransform_world
-    {}, -- point
-    0, -- alpha
-    {} -- vertex_buffer
+    {} -- point
 --#endregion init
 
 function onTick()
@@ -413,14 +333,6 @@ function onTick()
     end
 
     if renderOn then
-        -- Get cameraTransform
-        for i = 1, 16 do
-            cameraTransform_world[i] = input.getNumber(i)
-        end
-
-        alpha = input.getNumber(32)
-
-
         point = {input.getNumber(17), input.getNumber(18), input.getNumber(19)}
 
         if point[1] ~= 0 and point[2] ~= 0 then
@@ -428,41 +340,5 @@ function onTick()
             delaunay:triangulate()
         end
 
-    end
-end
-
-function onDraw()
-
-    if renderOn then
-
-        local setColor, drawTriangleF, drawTriangle, currentDrawnTriangles =
-            screen.setColor,
-            screen.drawTriangleF,
-            screen.drawTriangle,
-            0
-
-        --#region drawTriangle
-        if #delaunay.triangles > 0 then
-            local triangles = WorldToScreen(vertex_buffer, delaunay.vertices, delaunay.triangles, cameraTransform_world)
-
-            for i = 1, #triangles do
-                local triangle = triangles[i]
-
-                setColor(triangle.color.x, triangle.color.y, triangle.color.z)
-
-                drawTriangleF(triangle.v1.x, triangle.v1.y, triangle.v2.x, triangle.v2.y, triangle.v3.x, triangle.v3.y)
-
-                currentDrawnTriangles = currentDrawnTriangles + 1
-            end
-
-            setColor(0,0,0,255-alpha)
-            screen.drawRectF(0,0,w,h)
-        end
-        --#endregion drawTriangle
-
-        setColor(255,255,255,125)
-        screen.drawText(0,130,"Alpha: "..alpha)
-        screen.drawText(0,140,"#Triangles: "..#delaunay.triangles)
-        screen.drawText(0,150,"#DrawTriangles: "..currentDrawnTriangles)
     end
 end
