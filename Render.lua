@@ -285,14 +285,49 @@ return {
 --#endregion Triangle Handling
 
 
-
+--#region init
+local point, cameraTransform_world, vertices, quadTree = {}, {}, {}, QuadTree(0,0,1E5)
+--#endregion init
 
 
 function onTick()
-    renderOn = false
+    renderOn = input.getBool(1)
+    clear = input.getBool(2)
+
+    if clear then
+        -- Probably memory leak, can't garbagecollect tables that references each other(?)
+        vertices, quadTree = {}, QuadTree(0,0,1E5)
+    end
+
 
     if renderOn then
-       -- Get cameratransform
+        -- Get cameratransform
+        for i = 1, 6 do
+            local a,b = H_S_fp(input.getNumber(i))
+            cameraTransform_world[(i-1)*2 + 1] = a
+            cameraTransform_world[(i-1)*2 + 2] = b
+        end
+        for i = 1, 4 do
+            cameraTransform_world[i+12] = input.getNumber(i+6)
+        end
+
+
+        -- Get and try add point
+        point = Point(input.getNumber(11), input.getNumber(12), input.getNumber(13))
+        if point[1] ~= 0 and point[2] ~= 0 then
+            local id = #vertices + 1
+            vertices[id] = point
+            point.id = id
+        end
+
+
+        -- Get triangles
+        for i = 15, 32 do
+            
+            if true then
+                break
+            end
+        end
 
     end
 end

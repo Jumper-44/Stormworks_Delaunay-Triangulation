@@ -285,7 +285,7 @@ function onTick()
     -- pass through --
     output.setBool(1, renderOn)
     output.setBool(2, clear)
-    output.setNumber(32, input.getNumber(14)) -- Pass through color alpha value
+    output.setNumber(14, input.getNumber(14)) -- Pass through color alpha value
     ------------------
 
     local laserOutput = {0,0,0}

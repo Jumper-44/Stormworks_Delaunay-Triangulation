@@ -315,19 +315,40 @@ Delaunay = function(centerX, centerY, size)
 
 
 --#region init
-local delaunay, point =
-    Delaunay(), -- delaunay
-    {} -- point
+local delaunay, point, triangle_queue =
+    Delaunay(0,0, 1E6),
+    {},
+    {}
 --#endregion init
 
 function onTick()
+    --#region Get & pass though
+
+    -- Get & Pass through renderOn & clear
     renderOn = input.getBool(1)
-    if input.getBool(2) then -- Clear scan
-        delaunay = Delaunay()
+    clear = input.getBool(2)
+    output.setBool(1, renderOn)
+    output.setBool(2, clear)
+
+    -- Get & Pass through laserPos
+    point = {input.getNumber(11), input.getNumber(12), input.getNumber(13)}
+    for i = 1, 3 do output.setNumber(i+10, point[i]) end
+
+    -- Pass though cameratransform
+    for i = 1, 10 do output.setNumber(i, input.getNumber(i)) end
+
+    -- Pass through color alpha value
+    output.setNumber(14, input.getNumber(14))
+
+    --#endregion Get & pass though
+
+    -- Clear scan
+    if clear then
+        -- Probably memory leak, can't garbagecollect tables that references each other(?)
+        delaunay = Delaunay(0,0, 1E6)
     end
 
     if renderOn then
-        point = {input.getNumber(17), input.getNumber(18), input.getNumber(19)}
 
         if point[1] ~= 0 and point[2] ~= 0 then
             delaunay.vertices[#delaunay.vertices + 1] = Point( table.unpack(point) )
