@@ -245,7 +245,7 @@ local minDist_squared = 30^2 -- How dense can a flat plane be
 w,h=160,160 --Width & Height in pixels.
 cx,cy=w/2,h/2 --Don't touch    -    cx AND cy ARE NOT USED IN THIS SCRIPT BUT KEPT FOR COMPLETENESS TO EXPLANATION
 
-SCREEN={near=0, sizeX=0.7 ,sizeY=0.7, placementOffsetX=0, placementOffsetY=-0.01, centerX=cx, centerY=cy} -- change centerX|Y in 'Delaunay.lua'
+SCREEN={near=0, sizeX=0.7 ,sizeY=0.7, placementOffsetX=0, placementOffsetY=-0.01, centerX=cx, centerY=cy} -- change centerX|Y in 'Render.lua'
 --[[SCREEN Explanation
 -near is the distance from tip of the (compact pilot) seat to the screen in meters.
  

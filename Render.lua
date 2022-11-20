@@ -183,68 +183,121 @@ local Quad = function(centerX, centerY, size) return {
 
 -- Specifically for triangles in which none overlaps. No duplicates in tree. Not normal quad boundary checking.
 QuadTree = function(centerX, centerY, size) return {
-tree = Quad(centerX, centerY, size);
+    tree = Quad(centerX, centerY, size);
 
--- Example: quadTree:insert(quadTree.tree, triangle)
-insert = function(self, root, triangle)
-    local x_positive, y_positive, rootSize = 0, 0, root.size
+    -- Example: quadTree:insert(quadTree.tree, triangle)
+    insert = function(self, root, triangle)
+        local x_positive, y_positive, rootSize = 0, 0, root.size
 
-    -- Checking boundary for each vertex
-    for i = 1, 3 do
-        if triangle[i].x >= root.centerX then x_positive = x_positive + 1 end
-        if triangle[i].y >= root.centerY then y_positive = y_positive + 1 end
-    end
+        -- Checking boundary for each vertex
+        for i = 1, 3 do
+            if triangle[i].x >= root.centerX then x_positive = x_positive + 1 end
+            if triangle[i].y >= root.centerY then y_positive = y_positive + 1 end
+        end
 
-    -- if x|y_positive%3 is not 0 then the triangle is overlapping with other quadrants
-    if x_positive%3 == 0 and y_positive%3 == 0 and rootSize > 20 then
-        local quadrant = (y_positive==3 and 1 or 3) + (x_positive==y_positive and 0 or 1)
+        -- if x|y_positive%3 is not 0 then the triangle is overlapping with other quadrants
+        if x_positive%3 == 0 and y_positive%3 == 0 and rootSize > 20 then
+            local quadrant = (y_positive==3 and 1 or 3) + (x_positive==y_positive and 0 or 1)
 
-        if root.quadrant[quadrant] then
-            self:insert(root.quadrant[quadrant], triangle)
+            if root.quadrant[quadrant] then
+                self:insert(root.quadrant[quadrant], triangle)
+            else
+                root.quadrant[quadrant] = Quad(
+                    root.centerX + (x_positive==3 and rootSize or -rootSize),
+                    root.centerY + (y_positive==3 and rootSize or -rootSize),
+                    rootSize*0.5
+                )
+                self:insert(root.quadrant[quadrant], triangle)
+            end
+
         else
-            root.quadrant[quadrant] = Quad(
-                root.centerX + (x_positive==3 and rootSize or -rootSize),
-                root.centerY + (y_positive==3 and rootSize or -rootSize),
-                rootSize*0.5
-            )
-            self:insert(root.quadrant[quadrant], triangle)
+            -- Triangle get a reference to the root it lies in and adds it to said root
+            --triangle.root = root
+            root[#root + 1] = triangle
+        end
+    end;
+
+    -- Example: quadTree:remove(quadTree.tree, {p1, p2, p3})
+    searchAndRemove = function(self, root, vertices)
+        for i = 1, #root do
+            if root[i][1] == vertices[1] then
+                if root[i][2] == vertices[2] then
+                    if root[i][3] == vertices[3] then
+                        table.remove(root, i)
+                        return
+                    end
+                end
+            end
         end
 
-    else
-        -- Triangle get a reference to the root it lies in and adds it to said root
-        triangle.root = root
-        root[#root + 1] = triangle
-    end
-end;
+        local x_positive, y_positive = 0, 0
 
--- Finds the first triangle in which the point lies within the circumcircle and returns reference to triangle
-search = function(self, root, point)
-    for i = 1, #root do
-        local dx, dy =
-            root[i].circle.x - point.x,
-            root[i].circle.y - point.y
+        -- Checking boundary for each vertex
+        for i = 1, 3 do
+            if vertices[i].x >= root.centerX then x_positive = x_positive + 1 end
+            if vertices[i].y >= root.centerY then y_positive = y_positive + 1 end
+        end
 
-        if dx * dx + dy * dy <= root[i].circle.r then
-            return root[i]
+        return self:searchAndRemove(root.quadrant((y_positive==3 and 1 or 3) + (x_positive==y_positive and 0 or 1)), vertices)
+    end;
+
+    frustumCull = function(self, startRoot, cameraTransform, triangle_buffer)
+        local check_queue, full_in_view, id = {startRoot}, {}, 1
+
+        while id > 0 do
+            local root = check_queue[id]
+            local x, y, size, points_in = root.centerX, root.centerY, root.size, 0
+            local quadCorners = {
+                {x + size, y + size},
+                {x - size, y + size},
+                {x - size, y - size},
+                {x + size, y - size},
+            }
+
+            for i = 1, 4 do
+                local X,Z,W =
+                    cameraTransform[1]*quadCorners[i][1] + cameraTransform[5]*quadCorners[i][2] + cameraTransform[13],
+                --  cameraTransform[2]*quadCorners[i][1] + cameraTransform[6]*quadCorners[i][2] + cameraTransform[14],
+                    cameraTransform[3]*quadCorners[i][1] + cameraTransform[7]*quadCorners[i][2] + cameraTransform[15],
+                    cameraTransform[4]*quadCorners[i][1] + cameraTransform[8]*quadCorners[i][2] + cameraTransform[16]
+
+                if -W<=X and X<=W and 0<=Z and Z<=W then
+                    points_in = points_in + 1
+                end
+            end
+
+            if points_in == 4 then
+                full_in_view[#full_in_view+1] = root
+            elseif points_in > 0 then
+                for i = 1, #root do
+                    triangle_buffer[#triangle_buffer+1] = root[i]
+                end
+                for i = 1, 4 do
+                    if root.quadrant[i] then
+                        check_queue[#check_queue+1] = root.quadrant[i]
+                    end
+                end
+            end
+
+            table.remove(check_queue, id)
+            id = #check_queue
+        end
+
+        id = #full_in_view
+        while id > 0 do
+            local root = full_in_view[id]
+            for i = 1, #root do
+                triangle_buffer[#triangle_buffer+1] = root[i]
+            end
+            for i = 1, 4 do
+                if root.quadrant[i] then
+                    full_in_view[#full_in_view+1] = root.quadrant[i]
+                end
+            end
+            table.remove(full_in_view, id)
+            id = #full_in_view
         end
     end
-
-    local quadrant = (point.y>=root.centerY and 1 or 3) + ((point.x>=root.centerX)==(point.y>=root.centerY) and 0 or 1)
-
-    if root.quadrant[quadrant] then
-       return self:search(root.quadrant[quadrant], point)
-    end
-end;
-
--- The root the triangle lies in and the triangle itself
-remove = function(root, triangle)
-    for i = 1, #root do
-        if root[i] == triangle then
-            table.remove(root, i)
-            break
-        end
-    end
-end
 } end
 --#endregion QuadTree
 
@@ -267,8 +320,8 @@ local Color = function(normal, vertices)
 end
 
 -- Point Class
-local Point = function(x,y,z,id) return {
-    x=x; y=y; z=z or 0; id=id or 0
+local Point = function(x,y,z) return {
+    x=x; y=y; z=z or 0; --id=id or 0
 } end
 
 -- Triangle Class
@@ -322,12 +375,39 @@ function onTick()
 
 
         -- Get triangles
-        for i = 15, 32 do
-            
-            if true then
+        local t1, t2 = {}, {}
+        for i = 0, 5 do
+            for j = 1, 3 do
+                local a, b = uint16_to_int32(input.getNumber(14 + i*3 + j))
+                t1[j] = a
+                t2[j] = b
+            end
+
+            if t1[1] == 0 then
+                break
+            elseif t2[1] == 0 then
+                if input.getBool(i*2 + 3) then
+                    quadTree:insert(quadTree.tree, Triangle(vertices[t1[1]], vertices[t1[2]], vertices[t1[3]]))
+                else
+                    quadTree:searchAndRemove(quadTree.tree, {vertices[t1[1]], vertices[t1[2]], vertices[t1[3]]})
+                end
                 break
             end
+
+            if input.getBool(i*2 + 3) then
+                quadTree:insert(quadTree.tree, Triangle(vertices[t1[1]], vertices[t1[2]], vertices[t1[3]]))
+            else
+                quadTree:searchAndRemove(quadTree.tree, {vertices[t1[1]], vertices[t1[2]], vertices[t1[3]]})
+            end
+
+            if input.getBool(i*2 + 3) then
+                quadTree:insert(quadTree.tree, Triangle(vertices[t2[1]], vertices[t2[2]], vertices[t2[3]]))
+            else
+                quadTree:searchAndRemove(quadTree.tree, {vertices[t2[1]], vertices[t2[2]], vertices[t2[3]]})
+            end
         end
+
+
 
     end
 end

@@ -205,7 +205,8 @@ return {
 } end
 
 Delaunay = function(centerX, centerY, size)
-    local vertices, quadTree =
+    local vertices, actions_log, quadTree =
+        {n_vertices = 0},
         {},
         QuadTree(centerX, centerY, size)
 
@@ -213,13 +214,13 @@ Delaunay = function(centerX, centerY, size)
 
     return {
     vertices = vertices;
-    n_vertices = 0;
+    actions_log = actions_log; -- Don't care about triangles if any of the vertices is from the super triangle
     quadTree = quadTree;
 
-    triangulate = function(self)
+    triangulate = function()
         local end_pos = #vertices
 
-        for i = end_pos-(end_pos - self.n_vertices) + 1, end_pos do
+        for i = end_pos-(end_pos - vertices.n_vertices) + 1, end_pos do
             local currentVertex = vertices[i]
             local new_triangles, triangle_check_queue, id = {}, {quadTree:search(quadTree.tree, currentVertex)}, 1
 
@@ -256,6 +257,9 @@ Delaunay = function(centerX, centerY, size)
                             )
 
                             new_triangles[#new_triangles + 1] = new_triangle
+                            if new_triangle[1].id ~= 0 and new_triangle[2].id ~= 0 and new_triangle[3].id ~= 0 then
+                                table.insert(actions_log, 1, {new_triangle, true})
+                            end
 
                             for k = 1, 3 do
                                 if currentTriangle == currentNeighbor.neighbor[k] then
@@ -265,13 +269,18 @@ Delaunay = function(centerX, centerY, size)
                             end
                         end
                     elseif currentNeighbor == false then
-                        new_triangles[#new_triangles + 1] = Triangle(
+                        local new_triangle = Triangle(
                             currentVertex,
                             currentTriangle[j],
                             currentTriangle[j%3 + 1],
 
                             nil, false
                         )
+
+                        new_triangles[#new_triangles + 1] = new_triangle
+                        if new_triangle[1].id ~= 0 and new_triangle[2].id ~= 0 and new_triangle[3].id ~= 0 then
+                            table.insert(actions_log, 1, {new_triangle, true})
+                        end
                     end
 
                     -- Removes reference to other tables/triangles, so garbagecollection can collect
@@ -281,6 +290,11 @@ Delaunay = function(centerX, centerY, size)
 
                 -- Remove triangle from quadTree and queue and update 'id'
                 quadTree.remove(currentTriangle.root, currentTriangle)
+
+                if currentTriangle[1].id ~= 0 and currentTriangle[2].id ~= 0 and currentTriangle[3].id ~= 0 then
+                    table.insert(actions_log, 1, {currentTriangle, false})
+                end
+
                 table.remove(triangle_check_queue, id)
                 id = #triangle_check_queue
             end
@@ -308,16 +322,15 @@ Delaunay = function(centerX, centerY, size)
 
         end
 
-        self.n_vertices = end_pos
+        vertices.n_vertices = end_pos
     end
 } end
 --#endregion Delaunay
 
 
 --#region init
-local delaunay, point, triangle_queue =
-    Delaunay(0,0, 1E6),
-    {},
+local delaunay, point =
+    Delaunay(0,0, 1E5),
     {}
 --#endregion init
 
@@ -342,17 +355,44 @@ function onTick()
 
     --#endregion Get & pass though
 
-    -- Clear scan
+
     if clear then
         -- Probably memory leak, can't garbagecollect tables that references each other(?)
-        delaunay = Delaunay(0,0, 1E6)
+        delaunay = Delaunay(0,0, 1E5)
     end
+
+    -- Clear triangle output
+    for i = 15, 32 do output.setNumber(i,0) end
 
     if renderOn then
 
         if point[1] ~= 0 and point[2] ~= 0 then
             delaunay.vertices[#delaunay.vertices + 1] = Point( table.unpack(point) )
-            delaunay:triangulate()
+            delaunay.triangulate()
+
+            for i = 0, 5 do
+                local id = #delaunay.actions_log
+
+                if id > 0 then
+                    if id == 1 then
+                        for j = 1, 3 do
+                            output.setNumber(14 + i*3 + j, int32_to_uint16(delaunay.actions_log[id][1][j].id, 0))
+                        end
+                        output.setBool(i*2 + 3, delaunay.actions_log[id][2])
+                        delaunay.actions_log[id] = nil
+                    else
+                        for j = 1, 3 do
+                            output.setNumber(14 + i*3 + j, int32_to_uint16(delaunay.actions_log[id][1][j].id, delaunay.actions_log[id-1][1][j].id))
+                        end
+                        output.setBool(i*2 + 3, delaunay.actions_log[id][2])
+                        output.setBool(i*2 + 4, delaunay.actions_log[id-1][2])
+                        delaunay.actions_log[id] = nil
+                        delaunay.actions_log[id-1] = nil
+                    end
+                else
+                    break
+                end
+            end
         end
 
     end
