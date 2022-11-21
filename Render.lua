@@ -78,6 +78,7 @@ local function S_H_fp(a, b) -- 2 Single Float Conversion To Half Float residing 
 end
 --]]
 
+--[[ Using H_S_fp, but have it inlined to reduce chars - only used once
 local function H_S_fp(x) -- Half Float Conversion To Single Float.
     local function convert(h)
         return ('f'):unpack(('I'):pack(((h&0x8000)<<16) | (((h&0x7c00)+0x1C000)<<13) | ((h&0x03FF)<<13)))
@@ -85,6 +86,7 @@ local function H_S_fp(x) -- Half Float Conversion To Single Float.
     x = ('I'):unpack(('f'):pack(x))
     return convert(x>>16), convert(x)
 end
+--]]
 
 -- Visualizer for the usable size range of 16bit floats.
 -- https://observablehq.com/@rreusser/half-precision-floating-point-visualized
@@ -95,10 +97,12 @@ local function int32_to_uint16(a, b) -- Takes 2 int32 and converts them to uint1
 end
 --]]
 
+--[[ Using uint16_to_int32, but have it inlined to reduce chars - only used once
 local function uint16_to_int32(x) -- Takes a single number containing 2 uint16 and unpacks them.
 	x = ('I'):unpack(('f'):pack(x))
 	return x>>16, x&0xffff
 end
+--]]
 --#endregion Conversion
 
 --#region vec3
@@ -122,40 +126,47 @@ local SCREEN, LIGHT_DIRECTION =
     {centerX = cx, centerY = cy},
     Normalize(Vec3(0, 0.1, -1))
 
-WorldToScreen = function(vertex_buffer, vertices, triangles, cameraTransform)
-    local tri = {}
+WorldToScreen = function(vertices, quadTree, cameraTransform)
+    local triangles_in_frustum, screen_triangles, vertex_buffer = {}, {}, {}
+    quadTree.frustumCull(quadTree.tree, cameraTransform, triangles_in_frustum)
 
-    for i=1, #vertices do
-        local x,y,z = vertices[i].x, vertices[i].y, vertices[i].z
+    for i = 1, #triangles_in_frustum do
+        local currentTriangle, v = triangles_in_frustum[i], {}
+        for j = 1, 3 do
+            local id = currentTriangle[j].id
+            if vertex_buffer[id] == nil then
 
-        local X,Y,Z,W =
-            cameraTransform[1]*x + cameraTransform[5]*y + cameraTransform[9]*z + cameraTransform[13],
-            cameraTransform[2]*x + cameraTransform[6]*y + cameraTransform[10]*z + cameraTransform[14],
-            cameraTransform[3]*x + cameraTransform[7]*y + cameraTransform[11]*z + cameraTransform[15],
-            cameraTransform[4]*x + cameraTransform[8]*y + cameraTransform[12]*z + cameraTransform[16]
+                local x,y,z = vertices[id].x, vertices[id].y, vertices[id].z
 
-        if (0<=Z and Z<=W) then --clip and discard points       -- (-W<=X and X<=W) and (-W<=Y and Y<=W) and (0<=Z and Z<=W)
-            local w = 1/W
-            vertex_buffer[i] = {
-                x = X*w*cx+SCREEN.centerX, y = Y*w*cy+SCREEN.centerY, z = Z*w,
-                isIn = (-W<=X and X<=W) and (-W<=Y and Y<=W)
-            }
-        else -- x & y are screen coordinates, z is depth
-            vertex_buffer[i] = false
+                local X,Y,Z,W =
+                    cameraTransform[1]*x + cameraTransform[5]*y + cameraTransform[9]*z + cameraTransform[13],
+                    cameraTransform[2]*x + cameraTransform[6]*y + cameraTransform[10]*z + cameraTransform[14],
+                    cameraTransform[3]*x + cameraTransform[7]*y + cameraTransform[11]*z + cameraTransform[15],
+                    cameraTransform[4]*x + cameraTransform[8]*y + cameraTransform[12]*z + cameraTransform[16]
+
+                if (0<=Z and Z<=W) then --clip and discard points       -- (-W<=X and X<=W) and (-W<=Y and Y<=W) and (0<=Z and Z<=W)
+                    local w = 1/W
+                    v[j] = {
+                        x = X*w*cx+SCREEN.centerX, y = Y*w*cy+SCREEN.centerY, z = Z*w,
+                        isIn = (-W<=X and X<=W) and (-W<=Y and Y<=W)
+                    }
+                    vertex_buffer[id] = v[j]
+                else -- x & y are screen coordinates, z is depth
+                    vertex_buffer[id] = false
+                    v[j] = false
+                end
+            else
+                v[j] = vertex_buffer[id]
+            end
         end
-    end
 
-    for i=1, #triangles do
-        local triangle = triangles[i]
-        local v1,v2,v3 = vertex_buffer[triangle[1].id], vertex_buffer[triangle[2].id], vertex_buffer[triangle[3].id]
-
-        if v1 and v2 and v3 then -- if all vertices are within the near and far plane
-            if v1.isIn or v2.isIn or v3.isIn then -- if atleast 1 visible vertex
-                if (v1.x*v2.y - v2.x*v1.y + v2.x*v3.y - v3.x*v2.y + v3.x*v1.y - v1.x*v3.y) > 0 then -- if the triangle is facing the camera, checks for CCW
-                    tri[#tri + 1] = {
-                        v1=v1, v2=v2, v3=v3;
-                        color = triangle.color;
-                        depth = (1/3)*(v1.z + v2.z + v3.z)
+        if v[1] and v[2] and v[3] then -- if all vertices are within the near and far plane
+            if v[1].isIn or v[2].isIn or v[3].isIn then -- if atleast 1 visible vertex
+                if (v[1].x*v[2].y - v[2].x*v[1].y + v[2].x*v[3].y - v[3].x*v[2].y + v[3].x*v[1].y - v[1].x*v[3].y) > 0 then -- if the triangle is facing the camera, checks for CCW
+                    screen_triangles[#screen_triangles + 1] = {
+                        v1=v[1], v2=v[2], v3=v[3];
+                        color = currentTriangle.color;
+                        depth = (1/3)*(v[1].z + v[2].z + v[3].z)
                     }
                 end
             end
@@ -163,13 +174,13 @@ WorldToScreen = function(vertex_buffer, vertices, triangles, cameraTransform)
     end
 
     -- painter's algorithm
-    table.sort(tri,
+    table.sort(screen_triangles,
         function(triangle1,triangle2)
             return triangle1.depth > triangle2.depth
         end
     )
 
-    return tri
+    return screen_triangles
 end
 --#endregion Rendering
 
@@ -241,7 +252,7 @@ QuadTree = function(centerX, centerY, size) return {
         return self:searchAndRemove(root.quadrant((y_positive==3 and 1 or 3) + (x_positive==y_positive and 0 or 1)), vertices)
     end;
 
-    frustumCull = function(self, startRoot, cameraTransform, triangle_buffer)
+    frustumCull = function(startRoot, cameraTransform, triangle_buffer)
         local check_queue, full_in_view, id = {startRoot}, {}, 1
 
         while id > 0 do
@@ -302,7 +313,7 @@ QuadTree = function(centerX, centerY, size) return {
 --#endregion QuadTree
 
 --#region Triangle Handling
-local Color = function(normal, vertices)
+Color = function(normal, vertices)
     local dot, verticesUnderWater, color =
         Dot(normal, LIGHT_DIRECTION),
         0, nil
@@ -319,27 +330,33 @@ local Color = function(normal, vertices)
     return Scale( Add(Scale(color.flat, dot), Scale(color.steep, 1-dot)), dot*dot*0.9 + 0.1 )
 end
 
--- Point Class
+--[[ Point Class is substituted by Vec3()
 local Point = function(x,y,z) return {
     x=x; y=y; z=z or 0; --id=id or 0
 } end
+]]
 
 -- Triangle Class
-local Triangle = function(p1,p2,p3)
-    local normal = Normalize( Cross(Sub(p1,p2), Sub(p2,p3)) )
-
-return {
+Triangle = function(p1,p2,p3) return {
     p1;
     p2; -- Triangle should be CCW winding order
     p3;
-    color = Color(normal, {p1,p2,p3});
+    color = Color(Normalize( Cross(Sub(p1,p2), Sub(p2,p3)) ), {p1,p2,p3});
 --  root = nil;
 } end
+
+Triangle_add_rem = function(vertices, quadTree, t, i)
+    if input.getBool(i) then
+        quadTree:insert(quadTree.tree, Triangle(vertices[t[1]], vertices[t[2]], vertices[t[3]]))
+    else
+        quadTree:searchAndRemove(quadTree.tree, {vertices[t[1]], vertices[t[2]], vertices[t[3]]})
+    end
+end
 --#endregion Triangle Handling
 
 
 --#region init
-local point, cameraTransform_world, vertices, quadTree = {}, {}, {}, QuadTree(0,0,1E5)
+local point, cameraTransform_world, vertices, quadTree, alpha = {}, {}, {}, QuadTree(0,0,1E5), 0
 --#endregion init
 
 
@@ -348,7 +365,6 @@ function onTick()
     clear = input.getBool(2)
 
     if clear then
-        -- Probably memory leak, can't garbagecollect tables that references each other(?)
         vertices, quadTree = {}, QuadTree(0,0,1E5)
     end
 
@@ -356,9 +372,12 @@ function onTick()
     if renderOn then
         -- Get cameratransform
         for i = 1, 6 do
-            local a,b = H_S_fp(input.getNumber(i))
-            cameraTransform_world[(i-1)*2 + 1] = a
-            cameraTransform_world[(i-1)*2 + 2] = b
+            -- inlined H_S_fp()
+            -- cameraTransform_world[(i-1)*2 + 1], cameraTransform_world[(i-1)*2 + 2] = H_S_fp(input.getNumber(i))
+            local convert, temp = function(h)
+                return ('f'):unpack(('I'):pack(((h&0x8000)<<16) | (((h&0x7c00)+0x1C000)<<13) | ((h&0x03FF)<<13)))
+            end, ('I'):unpack(('f'):pack(input.getNumber(i)))
+            cameraTransform_world[(i-1)*2 + 1], cameraTransform_world[(i-1)*2 + 2] = convert(temp>>16), convert(temp)
         end
         for i = 1, 4 do
             cameraTransform_world[i+12] = input.getNumber(i+6)
@@ -366,45 +385,34 @@ function onTick()
 
 
         -- Get and try add point
-        point = Point(input.getNumber(11), input.getNumber(12), input.getNumber(13))
-        if point[1] ~= 0 and point[2] ~= 0 then
+        point = Vec3(input.getNumber(11), input.getNumber(12), input.getNumber(13))
+        if point.x ~= 0 and point.y ~= 0 then
             local id = #vertices + 1
             vertices[id] = point
             point.id = id
         end
 
+        alpha = input.getNumber(14)
 
         -- Get triangles
-        local t1, t2 = {}, {}
+        local t1, t2, temp = {}, {}, 0
         for i = 0, 5 do
             for j = 1, 3 do
-                local a, b = uint16_to_int32(input.getNumber(14 + i*3 + j))
-                t1[j] = a
-                t2[j] = b
+                -- inlined uint16_to_int32()
+                -- t1[j], t2[j] = uint16_to_int32(input.getNumber(14 + i*3 + j))
+                temp = ('I'):unpack(('f'):pack(input.getNumber(14 + i*3 + j)))
+                t1[j], t2[j] = temp>>16, temp&0xffff
             end
 
             if t1[1] == 0 then
                 break
             elseif t2[1] == 0 then
-                if input.getBool(i*2 + 3) then
-                    quadTree:insert(quadTree.tree, Triangle(vertices[t1[1]], vertices[t1[2]], vertices[t1[3]]))
-                else
-                    quadTree:searchAndRemove(quadTree.tree, {vertices[t1[1]], vertices[t1[2]], vertices[t1[3]]})
-                end
+                Triangle_add_rem(vertices, quadTree, t1, i*2 + 3)
                 break
             end
 
-            if input.getBool(i*2 + 3) then
-                quadTree:insert(quadTree.tree, Triangle(vertices[t1[1]], vertices[t1[2]], vertices[t1[3]]))
-            else
-                quadTree:searchAndRemove(quadTree.tree, {vertices[t1[1]], vertices[t1[2]], vertices[t1[3]]})
-            end
-
-            if input.getBool(i*2 + 3) then
-                quadTree:insert(quadTree.tree, Triangle(vertices[t2[1]], vertices[t2[2]], vertices[t2[3]]))
-            else
-                quadTree:searchAndRemove(quadTree.tree, {vertices[t2[1]], vertices[t2[2]], vertices[t2[3]]})
-            end
+            Triangle_add_rem(vertices, quadTree, t1, i*2 + 3)
+            Triangle_add_rem(vertices, quadTree, t2, i*2 + 4)
         end
 
 
@@ -412,40 +420,36 @@ function onTick()
     end
 end
 
---[[
+
 function onDraw()
 
     if renderOn then
 
-        local setColor, drawTriangleF, drawTriangle, currentDrawnTriangles =
+        local setColor, drawTriangleF, currentDrawnTriangles =
             screen.setColor,
             screen.drawTriangleF,
-            screen.drawTriangle,
             0
 
         --#region drawTriangle
-        if #delaunay.triangles > 0 then
-            local triangles = WorldToScreen(vertex_buffer, delaunay.vertices, delaunay.triangles, cameraTransform_world)
+        local triangles = WorldToScreen(vertices, quadTree, cameraTransform_world)
 
-            for i = 1, #triangles do
-                local triangle = triangles[i]
+        for i = 1, #triangles do
+            local triangle = triangles[i]
 
-                setColor(triangle.color.x, triangle.color.y, triangle.color.z)
+            setColor(triangle.color.x, triangle.color.y, triangle.color.z)
 
-                drawTriangleF(triangle.v1.x, triangle.v1.y, triangle.v2.x, triangle.v2.y, triangle.v3.x, triangle.v3.y)
+            drawTriangleF(triangle.v1.x, triangle.v1.y, triangle.v2.x, triangle.v2.y, triangle.v3.x, triangle.v3.y)
 
-                currentDrawnTriangles = currentDrawnTriangles + 1
-            end
-
-            setColor(0,0,0,255-alpha)
-            screen.drawRectF(0,0,w,h)
+            currentDrawnTriangles = currentDrawnTriangles + 1
         end
+
+        setColor(0,0,0,255-alpha)
+        screen.drawRectF(0,0,w,h)
         --#endregion drawTriangle
 
         setColor(255,255,255,125)
         screen.drawText(0,130,"Alpha: "..alpha)
-        screen.drawText(0,140,"#Triangles: "..#delaunay.triangles)
         screen.drawText(0,150,"#DrawTriangles: "..currentDrawnTriangles)
     end
 end
---]]
+
