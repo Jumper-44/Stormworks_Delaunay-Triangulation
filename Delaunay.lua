@@ -20,6 +20,8 @@ do
     simulator:setScreen(1, "9x5")
     simulator:setProperty("ExampleNumberProperty", 123)
 
+    local _isTouched = false
+
     -- Runs every tick just before onTick; allows you to simulate the inputs changing
     ---@param simulator Simulator Use simulator:<function>() to set inputs etc.
     ---@param ticks     number Number of ticks since simulator started
@@ -27,11 +29,20 @@ do
 
         -- touchscreen defaults
         local screenConnection = simulator:getTouchScreen(1)
-        simulator:setInputBool(1, screenConnection.isTouched)
-        simulator:setInputNumber(1, screenConnection.width)
-        simulator:setInputNumber(2, screenConnection.height)
-        simulator:setInputNumber(3, screenConnection.touchX)
-        simulator:setInputNumber(4, screenConnection.touchY)
+        --simulator:setInputBool(1, screenConnection.isTouched)
+        --simulator:setInputNumber(1, screenConnection.width)
+        --simulator:setInputNumber(2, screenConnection.height)
+        --simulator:setInputNumber(3, screenConnection.touchX)
+        --simulator:setInputNumber(4, screenConnection.touchY)
+
+        if screenConnection.isTouched and screenConnection.isTouched ~= _isTouched then
+            simulator:setInputNumber(11, screenConnection.touchX)
+            simulator:setInputNumber(12, screenConnection.touchY)
+        else
+            simulator:setInputNumber(11, 0)
+            simulator:setInputNumber(12, 0)
+        end
+        _isTouched = screenConnection.isTouched
 
         -- NEW! button/slider options from the UI
         simulator:setInputBool(31, simulator:getIsClicked(1))       -- if button 1 is clicked, provide an ON pulse for input.getBool(31)
@@ -61,7 +72,7 @@ This does the delaunay triangulation
 --#region Conversion
 -- Bitwise operations can only be done to integers, but also need to send the numbers as float when sending from script to script as Stormworks likes it that way.
 local function int32_to_uint16(a, b) -- Takes 2 int32 and converts them to uint16 residing in a single number
-	return ('f'):unpack(('I'):pack( ((a&0xffff)<<16) | (b&0xffff)) )
+	return (('f'):unpack(('I'):pack( ((a&0xffff)<<16) | (b&0xffff)) ))
 end
 
 --[[

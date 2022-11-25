@@ -74,7 +74,7 @@ local function S_H_fp(a, b) -- 2 Single Float Conversion To Half Float residing 
         return ((f>>16)&0x8000)|((((f&0x7f800000)-0x38000000)>>13)&0x7c00)|((f>>13)&0x03ff)
     end
 
-    return ('f'):unpack(('I'):pack( convert(a)<<16 | convert(b) ))
+    return (('f'):unpack(('I'):pack( convert(a)<<16 | convert(b) )))
 end
 --]]
 
@@ -93,7 +93,7 @@ end
 
 --[[
 local function int32_to_uint16(a, b) -- Takes 2 int32 and converts them to uint16 residing in a single number
-	return ('f'):unpack(('I'):pack( ((a&0xffff)<<16) | (b&0xffff)) )
+	return (('f'):unpack(('I'):pack( ((a&0xffff)<<16) | (b&0xffff)) ))
 end
 --]]
 

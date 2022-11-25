@@ -17,7 +17,7 @@
 do
     ---@type Simulator -- Set properties and screen sizes here - will run once when the script is loaded
     simulator = simulator
-    simulator:setScreen(1, "3x3")
+    simulator:setScreen(1, "9x5")
     simulator:setProperty("ExampleNumberProperty", 123)
 
     -- Runs every tick just before onTick; allows you to simulate the inputs changing
@@ -28,10 +28,18 @@ do
         -- touchscreen defaults
         local screenConnection = simulator:getTouchScreen(1)
         simulator:setInputBool(1, screenConnection.isTouched)
-        simulator:setInputNumber(1, screenConnection.width)
-        simulator:setInputNumber(2, screenConnection.height)
-        simulator:setInputNumber(3, screenConnection.touchX)
-        simulator:setInputNumber(4, screenConnection.touchY)
+        --simulator:setInputNumber(1, screenConnection.width)
+        --simulator:setInputNumber(2, screenConnection.height)
+        simulator:setInputNumber(1, screenConnection.touchX*0.01)
+        simulator:setInputNumber(2, screenConnection.touchY*0.01)
+        simulator:setInputNumber(3, screenConnection.touchX*0.01)
+        simulator:setInputNumber(4, screenConnection.touchY*0.01)
+        simulator:setInputNumber(5, screenConnection.touchX*0.01)
+        simulator:setInputNumber(6, screenConnection.touchY*0.01)
+        simulator:setInputNumber(7, screenConnection.touchX*0.01)
+        simulator:setInputNumber(8, screenConnection.touchY*0.01)
+        simulator:setInputNumber(9, screenConnection.touchX*0.01)
+        simulator:setInputNumber(10, screenConnection.touchY*0.01)
 
         -- NEW! button/slider options from the UI
         simulator:setInputBool(31, simulator:getIsClicked(1))       -- if button 1 is clicked, provide an ON pulse for input.getBool(31)
@@ -71,7 +79,7 @@ local function S_H_fp(a, b) -- 2 Single Float Conversion To Half Float residing 
         return ((f>>16)&0x8000)|((((f&0x7f800000)-0x38000000)>>13)&0x7c00)|((f>>13)&0x03ff)
     end
 
-    return ('f'):unpack(('I'):pack( convert(a)<<16 | convert(b) ))
+    return (('f'):unpack(('I'):pack( convert(a)<<16 | convert(b) )))
 end
 
 --[[
