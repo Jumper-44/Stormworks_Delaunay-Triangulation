@@ -249,7 +249,7 @@ QuadTree = function(centerX, centerY, size) return {
             if vertices[i].y >= root.centerY then y_positive = y_positive + 1 end
         end
 
-        return self:searchAndRemove(root.quadrant((y_positive==3 and 1 or 3) + (x_positive==y_positive and 0 or 1)), vertices)
+        return self:searchAndRemove(root.quadrant[(y_positive==3 and 1 or 3) + (x_positive==y_positive and 0 or 1)], vertices)
     end;
 
     frustumCull = function(startRoot, cameraTransform, triangle_buffer)
