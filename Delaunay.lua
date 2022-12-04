@@ -105,7 +105,7 @@ local Quad = function(centerX, centerY, size) return {
         quadrant = {}
 } end
 
--- Specifically for triangles in which none overlaps. No duplicates in tree. Not normal quad boundary checking.
+-- Specifically for triangles in which none overlaps. No duplicates in tree.
 QuadTree = function(centerX, centerY, size) return {
     tree = Quad(centerX, centerY, size);
 
@@ -355,14 +355,14 @@ function onTick()
     output.setBool(2, clear)
 
     -- Get & Pass through laserPos
-    point = {input.getNumber(11), input.getNumber(12), input.getNumber(13)}
-    for i = 1, 3 do output.setNumber(i+10, point[i]) end
+    point = {input.getNumber(17), input.getNumber(18), input.getNumber(19)}
+    for i = 1, 3 do output.setNumber(i+16, point[i]) end
 
     -- Pass though cameratransform
-    for i = 1, 10 do output.setNumber(i, input.getNumber(i)) end
+    for i = 1, 16 do output.setNumber(i, input.getNumber(i)) end
 
     -- Pass through color alpha value
-    output.setNumber(14, input.getNumber(14))
+    output.setNumber(20, input.getNumber(20))
 
     --#endregion Get & pass though
 
@@ -373,7 +373,7 @@ function onTick()
     end
 
     -- Clear triangle output
-    for i = 15, 32 do output.setNumber(i,0) end
+    for i = 21, 32 do output.setNumber(i,0) end
 
     if renderOn then
 
@@ -381,19 +381,19 @@ function onTick()
             delaunay.vertices[#delaunay.vertices + 1] = Point( table.unpack(point) )
             delaunay.triangulate()
 
-            for i = 0, 5 do
+            for i = 0, 3 do
                 local id = #delaunay.actions_log
 
                 if id > 0 then
                     if id == 1 then
                         for j = 1, 3 do
-                            output.setNumber(14 + i*3 + j, int32_to_uint16(delaunay.actions_log[id][1][j].id, 0))
+                            output.setNumber(20 + i*3 + j, int32_to_uint16(delaunay.actions_log[id][1][j].id, 0))
                         end
                         output.setBool(i*2 + 3, delaunay.actions_log[id][2])
                         delaunay.actions_log[id] = nil
                     else
                         for j = 1, 3 do
-                            output.setNumber(14 + i*3 + j, int32_to_uint16(delaunay.actions_log[id][1][j].id, delaunay.actions_log[id-1][1][j].id))
+                            output.setNumber(20 + i*3 + j, int32_to_uint16(delaunay.actions_log[id][1][j].id, delaunay.actions_log[id-1][1][j].id))
                         end
                         output.setBool(i*2 + 3, delaunay.actions_log[id][2])
                         output.setBool(i*2 + 4, delaunay.actions_log[id-1][2])

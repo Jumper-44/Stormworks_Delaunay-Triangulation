@@ -17,7 +17,7 @@
 do
     ---@type Simulator -- Set properties and screen sizes here - will run once when the script is loaded
     simulator = simulator
-    simulator:setScreen(1, "3x3")
+    simulator:setScreen(1, "5x5")
     simulator:setProperty("ExampleNumberProperty", 123)
 
     -- Runs every tick just before onTick; allows you to simulate the inputs changing
@@ -66,11 +66,8 @@ This recieves triangle data from "Delaunay.lua" and renders
 --[[
 local function S_H_fp(a, b) -- 2 Single Float Conversion To Half Float residing in a float.
     local function convert(f)
-        local epsilon = .000031
-        if f<epsilon and f>-epsilon then return 0 end
-
+        if f<3.0545e-5 and f>-3.0545e-5 then return 0 end
         f = ('I'):unpack(('f'):pack(f))
-
         return ((f>>16)&0x8000)|((((f&0x7f800000)-0x38000000)>>13)&0x7c00)|((f>>13)&0x03ff)
     end
 
@@ -126,9 +123,9 @@ local SCREEN, LIGHT_DIRECTION =
     {centerX = cx, centerY = cy},
     Normalize(Vec3(0, 0.1, -1))
 
-WorldToScreen = function(vertices, quadTree, cameraTransform)
+WorldToScreen = function(vertices, quadTree, cameraTransform, gps)
     local triangles_in_frustum, screen_triangles, vertex_buffer = {}, {}, {}
-    quadTree.frustumCull(quadTree.tree, cameraTransform, triangles_in_frustum)
+    quadTree.frustumCull(quadTree.tree, cameraTransform, gps, triangles_in_frustum)
 
     for i = 1, #triangles_in_frustum do
         local currentTriangle, v = triangles_in_frustum[i], {}
@@ -136,13 +133,17 @@ WorldToScreen = function(vertices, quadTree, cameraTransform)
             local id = currentTriangle[j].id
             if vertex_buffer[id] == nil then
 
-                local x,y,z = vertices[id].x, vertices[id].y, vertices[id].z
+                local X, Y, Z, W =
+                    vertices[id].x - gps.x,
+                    vertices[id].y - gps.y,
+                    vertices[id].z - gps.z,
+                    nil
 
-                local X,Y,Z,W =
-                    cameraTransform[1]*x + cameraTransform[5]*y + cameraTransform[9]*z + cameraTransform[13],
-                    cameraTransform[2]*x + cameraTransform[6]*y + cameraTransform[10]*z + cameraTransform[14],
-                    cameraTransform[3]*x + cameraTransform[7]*y + cameraTransform[11]*z + cameraTransform[15],
-                    cameraTransform[4]*x + cameraTransform[8]*y + cameraTransform[12]*z + cameraTransform[16]
+                X,Y,Z,W =
+                    cameraTransform[1]*X + cameraTransform[5]*Y + cameraTransform[9]*Z,             -- + cameraTransform[13],
+                    cameraTransform[2]*X + cameraTransform[6]*Y + cameraTransform[10]*Z,            -- + cameraTransform[14],
+                    cameraTransform[3]*X + cameraTransform[7]*Y + cameraTransform[11]*Z + cameraTransform[15],
+                    cameraTransform[4]*X + cameraTransform[8]*Y + cameraTransform[12]*Z             -- + cameraTransform[16]
 
                 if (0<=Z and Z<=W) then --clip and discard points       -- (-W<=X and X<=W) and (-W<=Y and Y<=W) and (0<=Z and Z<=W)
                     local w = 1/W
@@ -192,7 +193,7 @@ local Quad = function(centerX, centerY, size) return {
     quadrant = {}
 } end
 
--- Specifically for triangles in which none overlaps. No duplicates in tree. Not normal quad boundary checking.
+-- Specifically for triangles in which none overlaps. No duplicates in tree.
 QuadTree = function(centerX, centerY, size) return {
     tree = Quad(centerX, centerY, size);
 
@@ -252,7 +253,7 @@ QuadTree = function(centerX, centerY, size) return {
         return self:searchAndRemove(root.quadrant[(y_positive==3 and 1 or 3) + (x_positive==y_positive and 0 or 1)], vertices)
     end;
 
-    frustumCull = function(startRoot, cameraTransform, triangle_buffer)
+    frustumCull = function(startRoot, cameraTransform, gps, triangle_buffer)
         local check_queue, full_in_view, id = {startRoot}, {}, 1
 
         while id > 0 do
@@ -266,13 +267,20 @@ QuadTree = function(centerX, centerY, size) return {
             }
 
             for i = 1, 4 do
-                local X,Z,W =
-                    cameraTransform[1]*quadCorners[i][1] + cameraTransform[5]*quadCorners[i][2] + cameraTransform[13],
-                --  cameraTransform[2]*quadCorners[i][1] + cameraTransform[6]*quadCorners[i][2] + cameraTransform[14],
-                    cameraTransform[3]*quadCorners[i][1] + cameraTransform[7]*quadCorners[i][2] + cameraTransform[15],
-                    cameraTransform[4]*quadCorners[i][1] + cameraTransform[8]*quadCorners[i][2] + cameraTransform[16]
+                -- The Z is meant in screen coordinates and therefore doesn't match with its name when recieving world space y coordinate
+                local X, Z, W =
+                    quadCorners[i][1] - gps.x,
+                    quadCorners[i][2] - gps.y,
+                    nil
 
-                if -W<=X and X<=W and 0<=Z and Z<=W then
+                X, Z, W =
+                    cameraTransform[1]*X + cameraTransform[5]*Z,             -- + cameraTransform[13],
+                --  cameraTransform[2]*X + cameraTransform[6]*Z,             -- + cameraTransform[14],
+                    cameraTransform[3]*X + cameraTransform[7]*Z + cameraTransform[15],
+                    cameraTransform[4]*X + cameraTransform[8]*Z             -- + cameraTransform[16]
+
+
+                if true then  -- -W<=X and X<=W and 0<=Z and Z<=W then
                     points_in = points_in + 1
                 end
             end
@@ -356,7 +364,7 @@ end
 
 
 --#region init
-local point, cameraTransform_world, vertices, quadTree, alpha = {}, {}, {}, QuadTree(0,0,1E5), 0
+local point, cameraTransform_world, gps, vertices, quadTree, alpha = {}, {}, {}, {}, QuadTree(0,0,1E5), 0
 --#endregion init
 
 
@@ -371,6 +379,7 @@ function onTick()
 
     if renderOn then
         -- Get cameratransform
+        --[[
         for i = 1, 6 do
             -- inlined H_S_fp()
             -- cameraTransform_world[(i-1)*2 + 1], cameraTransform_world[(i-1)*2 + 2] = H_S_fp(input.getNumber(i))
@@ -379,28 +388,34 @@ function onTick()
             end, ('I'):unpack(('f'):pack(input.getNumber(i)))
             cameraTransform_world[(i-1)*2 + 1], cameraTransform_world[(i-1)*2 + 2] = convert(temp>>16), convert(temp)
         end
-        for i = 1, 4 do
-            cameraTransform_world[i+12] = input.getNumber(i+6)
+
+        cameraTransform_world[15] = input.getNumber(7)
+        gps.x, gps.y, gps.z = input.getNumber(8), input.getNumber(9), input.getNumber(10)
+        --]]
+        for i = 1, 12 do
+            cameraTransform_world[i] = input.getNumber(i)
         end
+        cameraTransform_world[15] = input.getNumber(13)
+        gps.x, gps.y, gps.z = input.getNumber(14), input.getNumber(15), input.getNumber(16)
 
 
         -- Get and try add point
-        point = Vec3(input.getNumber(11), input.getNumber(12), input.getNumber(13))
+        point = Vec3(input.getNumber(17), input.getNumber(18), input.getNumber(19))
         if point.x ~= 0 and point.y ~= 0 then
             local id = #vertices + 1
             vertices[id] = point
             point.id = id
         end
 
-        alpha = input.getNumber(14)
+        alpha = input.getNumber(20)
 
         -- Get triangles
         local t1, t2, temp = {}, {}, 0
-        for i = 0, 5 do
+        for i = 0, 3 do
             for j = 1, 3 do
                 -- inlined uint16_to_int32()
                 -- t1[j], t2[j] = uint16_to_int32(input.getNumber(14 + i*3 + j))
-                temp = ('I'):unpack(('f'):pack(input.getNumber(14 + i*3 + j)))
+                temp = ('I'):unpack(('f'):pack(input.getNumber(20 + i*3 + j)))
                 t1[j], t2[j] = temp>>16, temp&0xffff
             end
 
@@ -424,14 +439,13 @@ end
 function onDraw()
 
     if renderOn then
-
         local setColor, drawTriangleF, currentDrawnTriangles =
             screen.setColor,
             screen.drawTriangleF,
             0
 
         --#region drawTriangle
-        local triangles = WorldToScreen(vertices, quadTree, cameraTransform_world)
+        local triangles = WorldToScreen(vertices, quadTree, cameraTransform_world, gps)
 
         for i = 1, #triangles do
             local triangle = triangles[i]
@@ -450,6 +464,17 @@ function onDraw()
         setColor(255,255,255,125)
         screen.drawText(0,130,"Alpha: "..alpha)
         screen.drawText(0,150,"#DrawTriangles: "..currentDrawnTriangles)
+
+
+		--[[Draw Matrix Content
+    	screen.setColor(255,0,100)
+		tempMatrix=cameraTransform_world
+    	for i=0,1 do
+			for j=1,8 do
+				screen.drawText(i*80,j*10, ("%.8f"):format(tempMatrix[i*8+j]))
+			end
+		end
+		--]]
     end
 end
 

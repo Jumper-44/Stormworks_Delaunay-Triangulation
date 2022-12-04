@@ -69,18 +69,17 @@ Sends the cameraTransform_world and laserPos to the next lua script (ingame)
 
 --#region Conversion
 -- Bitwise operations can only be done to integers, but also need to send the numbers as float when sending from script to script as Stormworks likes it that way.
+--[[
 local function S_H_fp(a, b) -- 2 Single Float Conversion To Half Float residing in a float.
     local function convert(f)
-        local epsilon = .000031
-        if f<epsilon and f>-epsilon then return 0 end
-
+        if f<3.0545e-5 and f>-3.0545e-5 then return 0 end
         f = ('I'):unpack(('f'):pack(f))
-
         return ((f>>16)&0x8000)|((((f&0x7f800000)-0x38000000)>>13)&0x7c00)|((f>>13)&0x03ff)
     end
 
     return (('f'):unpack(('I'):pack( convert(a)<<16 | convert(b) )))
 end
+--]]
 
 --[[
 local function H_S_fp(x) -- Half Float Conversion To Single Float.
@@ -293,7 +292,7 @@ function onTick()
     -- pass through --
     output.setBool(1, renderOn)
     output.setBool(2, clear)
-    output.setNumber(14, input.getNumber(14)) -- Pass through color alpha value
+    output.setNumber(20, input.getNumber(14)) -- Pass through color alpha value
     ------------------
 
     local laserOutput = {0,0,0}
@@ -365,28 +364,46 @@ function onTick()
         ------------------------------------
 
 
-        ------{ Translation Matrix Setup }-----
-        translate_world = Vec3( table.unpack( MatrixMul(rotationMatrixZXY, {{offset.gps:add(offset.head):unpack(0)}})[1] ) ):add(gps)
+        ------{ Translation Matrix Setup }------
+        -- translate_world = Vec3( table.unpack( MatrixMul(rotationMatrixZXY, {{offset.gps:add(offset.head):unpack(0)}})[1] ) ):add(gps)
+        -- translationMatrix_world[4] = {Vec3():sub(translate_world):unpack(1)}
 
-        translationMatrix_world[4] = {Vec3():sub(translate_world):unpack(1)}
-        ---------------------------------------
+        translate_world = Vec3( table.unpack( MatrixMul(rotationMatrixZXY, {{offset.gps:add(offset.head):unpack(0)}})[1] ) ):add(gps)
+        ----------------------------------------
 
 
         ------{ Final Camera Transform Matrix }-----
+        -- cameraTransform_world = MatrixMul(perspectiveProjectionMatrix, MatrixMul(MatrixTranspose(rotationMatrixZXY), translationMatrix_world))
         cameraTransform_world = MatrixMul(perspectiveProjectionMatrix, MatrixMul(MatrixTranspose(rotationMatrixZXY), translationMatrix_world))
         --------------------------------------------
 
 
         -- Output cameraTransform_world
-        -- Fils 1-6 with half floats, 7-10 with normal numbers.
+        
+        
+        --[[ Fils the output index 1-6 with half floats, 7-10 with single floats. Last 4 need to be single float as it contains GPS.
         for i=1, 3 do
             for j=1, 2 do
                 output.setNumber((i-1)*2 + j, S_H_fp(cameraTransform_world[i][(j-1)*2+1], cameraTransform_world[i][(j-1)*2+2]))
             end
         end
-        for i = 1, 4 do
-            output.setNumber(i+6, cameraTransform_world[4][i])
+
+        output.setNumber(7, cameraTransform_world[4][3])
+        output.setNumber(8, translate_world.x)
+        output.setNumber(9, translate_world.y)
+        output.setNumber(10, translate_world.z)
+        --]]
+
+        for i = 1, 3 do
+            for j = 1, 4 do
+                output.setNumber((i-1)*4 + j, cameraTransform_world[i][j])
+            end
         end
+
+        output.setNumber(13, cameraTransform_world[4][3])
+        output.setNumber(14, translate_world.x)
+        output.setNumber(15, translate_world.y)
+        output.setNumber(16, translate_world.z)
         --#endregion cameraTransform_world
 
         --#region laserPos
@@ -420,7 +437,7 @@ function onTick()
     end -- if renderOn
 
     -- Outputs laserPos to 11-13
-    for i = 1, 3 do output.setNumber(i+10, laserOutput[i]) end
+    for i = 1, 3 do output.setNumber(i+16, laserOutput[i]) end
 end
 
 --[[ debug
