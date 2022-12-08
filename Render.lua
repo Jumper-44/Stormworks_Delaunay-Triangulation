@@ -137,13 +137,25 @@ WorldToScreen = function(vertices, quadTree, cameraTransform, gps)
                     vertices[id].x - gps.x,
                     vertices[id].y - gps.y,
                     vertices[id].z - gps.z,
-                    nil
+                    {} -- W was 0, but now used as a temp local var
 
+                --[[ Reduced due to char limit
                 X,Y,Z,W =
                     cameraTransform[1]*X + cameraTransform[5]*Y + cameraTransform[9]*Z,             -- + cameraTransform[13],
                     cameraTransform[2]*X + cameraTransform[6]*Y + cameraTransform[10]*Z,            -- + cameraTransform[14],
                     cameraTransform[3]*X + cameraTransform[7]*Y + cameraTransform[11]*Z + cameraTransform[15],
                     cameraTransform[4]*X + cameraTransform[8]*Y + cameraTransform[12]*Z             -- + cameraTransform[16]
+                --]]
+
+                for k = 1, 4 do
+                    W[k] = cameraTransform[k]*X + cameraTransform[k+4]*Y + cameraTransform[k+8]*Z
+                end
+                X, Y, Z, W =
+                    W[1],
+                    W[2],
+                    W[3] + cameraTransform[15],
+                    W[4]
+
 
                 if (0<=Z and Z<=W) then --clip and discard points       -- (-W<=X and X<=W) and (-W<=Y and Y<=W) and (0<=Z and Z<=W)
                     local w = 1/W
@@ -197,8 +209,8 @@ local Quad = function(centerX, centerY, size) return {
 QuadTree = function(centerX, centerY, size) return {
     tree = Quad(centerX, centerY, size);
 
-    -- Example: quadTree:insert(quadTree.tree, triangle)
-    insert = function(self, root, triangle)
+    -- Example: quadTree:insertTriangle(quadTree.tree, triangle)
+    insertTriangle = function(self, root, triangle)
         local x_positive, y_positive, rootSize = 0, 0, root.size
 
         -- Checking boundary for each vertex
@@ -212,14 +224,14 @@ QuadTree = function(centerX, centerY, size) return {
             local quadrant = (y_positive==3 and 1 or 3) + (x_positive==y_positive and 0 or 1)
 
             if root.quadrant[quadrant] then
-                self:insert(root.quadrant[quadrant], triangle)
+                self:insertTriangle(root.quadrant[quadrant], triangle)
             else
                 root.quadrant[quadrant] = Quad(
                     root.centerX + (x_positive==3 and rootSize or -rootSize),
                     root.centerY + (y_positive==3 and rootSize or -rootSize),
                     rootSize*0.5
                 )
-                self:insert(root.quadrant[quadrant], triangle)
+                self:insertTriangle(root.quadrant[quadrant], triangle)
             end
 
         else
@@ -253,41 +265,58 @@ QuadTree = function(centerX, centerY, size) return {
         return self:searchAndRemove(root.quadrant[(y_positive==3 and 1 or 3) + (x_positive==y_positive and 0 or 1)], vertices)
     end;
 
+    -- Frustum cull the quadTree and add the triangles in visible quads to the 'triangle_buffer'
+    -- https://web.archive.org/web/20030810032130/http://www.markmorley.com:80/opengl/frustumculling.html
     frustumCull = function(startRoot, cameraTransform, gps, triangle_buffer)
         local check_queue, full_in_view, id = {startRoot}, {}, 1
 
         while id > 0 do
             local root = check_queue[id]
-            local x, y, size, points_in = root.centerX, root.centerY, root.size, 0
+            local x, y, rootSize, points_in = root.centerX, root.centerY, root.size, {0,0,0,0,0,0}
             local quadCorners = {
-                {x + size, y + size},
-                {x - size, y + size},
-                {x - size, y - size},
-                {x + size, y - size},
+                x + rootSize, y + rootSize,
+                x - rootSize, y + rootSize,
+                x - rootSize, y - rootSize,
+                x + rootSize, y - rootSize
             }
 
-            for i = 1, 4 do
-                -- The Z is meant in screen coordinates and therefore doesn't match with its name when recieving world space y coordinate
-                local X, Z, W =
-                    quadCorners[i][1] - gps.x,
-                    quadCorners[i][2] - gps.y,
-                    nil
+            for i = 1, 8, 2 do
+                x, y = -- Reusing local var
+                    quadCorners[i]   - gps.x,
+                    quadCorners[i+1] - gps.y
 
-                X, Z, W =
-                    cameraTransform[1]*X + cameraTransform[5]*Z,             -- + cameraTransform[13],
-                --  cameraTransform[2]*X + cameraTransform[6]*Z,             -- + cameraTransform[14],
-                    cameraTransform[3]*X + cameraTransform[7]*Z + cameraTransform[15],
-                    cameraTransform[4]*X + cameraTransform[8]*Z             -- + cameraTransform[16]
+                local X, Y, Z, W =
+                    cameraTransform[1]*x + cameraTransform[5]*y,
+                    cameraTransform[2]*x + cameraTransform[6]*y,
+                    cameraTransform[3]*x + cameraTransform[7]*y + cameraTransform[15],
+                    cameraTransform[4]*x + cameraTransform[8]*y
 
+                -- Reusing local var 'x' as a temporary holder for the table
+                x = {
+                    -W<=X, X<=W,
+                    -W<=Y, Y<=W,
+                    0<=Z, Z<=W
+                }
 
-                if true then  -- -W<=X and X<=W and 0<=Z and Z<=W then
-                    points_in = points_in + 1
+                for j = 1, 6 do
+                    points_in[j] = points_in[j] + (x[j] and 1 or 0)
                 end
             end
 
-            if points_in == 4 then
+            x = 0 -- Reusing local var
+            for i = 1, 6 do
+                if points_in[i] == 0 then
+                    -- If none of the points are on the correct side of a plane then it is fully out of view.
+                    x = 0
+                    break
+                elseif points_in[i] == 4 then
+                    x = x+1
+                end
+            end
+
+            if x == 4 then
                 full_in_view[#full_in_view+1] = root
-            elseif points_in > 0 then
+            elseif x > 0 then
                 for i = 1, #root do
                     triangle_buffer[#triangle_buffer+1] = root[i]
                 end
@@ -355,7 +384,7 @@ Triangle = function(p1,p2,p3) return {
 
 Triangle_add_rem = function(vertices, quadTree, t, i)
     if input.getBool(i) then
-        quadTree:insert(quadTree.tree, Triangle(vertices[t[1]], vertices[t[2]], vertices[t[3]]))
+        quadTree:insertTriangle(quadTree.tree, Triangle(vertices[t[1]], vertices[t[2]], vertices[t[3]]))
     else
         quadTree:searchAndRemove(quadTree.tree, {vertices[t[1]], vertices[t[2]], vertices[t[3]]})
     end
