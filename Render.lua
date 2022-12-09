@@ -64,31 +64,6 @@ This recieves triangle data from "Delaunay.lua" and renders
 --#region Conversion
 -- Bitwise operations can only be done to integers, but also need to send the numbers as float when sending from script to script as Stormworks likes it that way.
 --[[
-local function S_H_fp(a, b) -- 2 Single Float Conversion To Half Float residing in a float.
-    local function convert(f)
-        if f<3.0545e-5 and f>-3.0545e-5 then return 0 end
-        f = ('I'):unpack(('f'):pack(f))
-        return ((f>>16)&0x8000)|((((f&0x7f800000)-0x38000000)>>13)&0x7c00)|((f>>13)&0x03ff)
-    end
-
-    return (('f'):unpack(('I'):pack( convert(a)<<16 | convert(b) )))
-end
---]]
-
---[[ Using H_S_fp, but have it inlined to reduce chars - only used once
-local function H_S_fp(x) -- Half Float Conversion To Single Float.
-    local function convert(h)
-        return ('f'):unpack(('I'):pack(((h&0x8000)<<16) | (((h&0x7c00)+0x1C000)<<13) | ((h&0x03FF)<<13)))
-    end
-    x = ('I'):unpack(('f'):pack(x))
-    return convert(x>>16), convert(x)
-end
---]]
-
--- Visualizer for the usable size range of 16bit floats.
--- https://observablehq.com/@rreusser/half-precision-floating-point-visualized
-
---[[
 local function int32_to_uint16(a, b) -- Takes 2 int32 and converts them to uint16 residing in a single number
 	return (('f'):unpack(('I'):pack( ((a&0xffff)<<16) | (b&0xffff)) ))
 end
