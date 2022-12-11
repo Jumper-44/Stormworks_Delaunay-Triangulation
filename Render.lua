@@ -190,8 +190,8 @@ QuadTree = function(centerX, centerY, size) return {
 
         -- Checking boundary for each vertex
         for i = 1, 3 do
-            if triangle[i].x >= root.centerX then x_positive = x_positive + 1 end
-            if triangle[i].y >= root.centerY then y_positive = y_positive + 1 end
+            x_positive = x_positive + (triangle[i].x >= root.centerX and 1 or 0)
+            y_positive = y_positive + (triangle[i].y >= root.centerY and 1 or 0)
         end
 
         -- if x|y_positive%3 is not 0 then the triangle is overlapping with other quadrants
@@ -211,7 +211,7 @@ QuadTree = function(centerX, centerY, size) return {
 
         else
             -- Triangle get a reference to the root it lies in and adds it to said root
-            --triangle.root = root
+            -- triangle.root = root     -- Only for "delaunay"
             root[#root + 1] = triangle
         end
     end;
@@ -219,13 +219,9 @@ QuadTree = function(centerX, centerY, size) return {
     -- Example: quadTree:remove(quadTree.tree, {p1, p2, p3})
     searchAndRemove = function(self, root, vertices)
         for i = 1, #root do
-            if root[i][1] == vertices[1] then
-                if root[i][2] == vertices[2] then
-                    if root[i][3] == vertices[3] then
-                        table.remove(root, i)
-                        return
-                    end
-                end
+            if root[i][1] == vertices[1] and root[i][2] == vertices[2] and root[i][3] == vertices[3] then
+                table.remove(root, i)
+                return
             end
         end
 
@@ -233,8 +229,8 @@ QuadTree = function(centerX, centerY, size) return {
 
         -- Checking boundary for each vertex
         for i = 1, 3 do
-            if vertices[i].x >= root.centerX then x_positive = x_positive + 1 end
-            if vertices[i].y >= root.centerY then y_positive = y_positive + 1 end
+            x_positive = x_positive + (vertices[i].x >= root.centerX and 1 or 0)
+            y_positive = y_positive + (vertices[i].y >= root.centerY and 1 or 0)
         end
 
         return self:searchAndRemove(root.quadrant[(y_positive==3 and 1 or 3) + (x_positive==y_positive and 0 or 1)], vertices)
@@ -243,11 +239,27 @@ QuadTree = function(centerX, centerY, size) return {
     -- Frustum cull the quadTree and add the triangles in visible quads to the 'triangle_buffer'
     -- https://web.archive.org/web/20030810032130/http://www.markmorley.com:80/opengl/frustumculling.html
     frustumCull = function(startRoot, cameraTransform, gps, triangle_buffer)
-        local check_queue, full_in_view, id = {startRoot}, {}, 1
+        local check_queue, full_in_view_queue, addToTraversalQueue = {startRoot}, {},
+            function(root, traversalQueue)
+                for i = 1, #root do
+                    triangle_buffer[#triangle_buffer+1] = root[i]
+                end
+                for i = 1, 4 do
+                    if root.quadrant[i] then
+                        traversalQueue[#traversalQueue+1] = root.quadrant[i]
+                    end
+                end
+            end
 
-        while id > 0 do
-            local root = check_queue[id]
-            local x, y, rootSize, points_in = root.centerX, root.centerY, root.size, {0,0,0,0,0,0}
+            local z1,z2,z3,z4 =
+                gps.z*cameraTransform[9],
+                gps.z*cameraTransform[10],
+                gps.z*cameraTransform[11],
+                gps.z*cameraTransform[12]
+
+        while #check_queue > 0 do
+            local root = table.remove(check_queue)
+            local x, y, rootSize, points_in = root.centerX, root.centerY, root.size*2, {0,0,0,0,0,0}
             local quadCorners = {
                 x + rootSize, y + rootSize,
                 x - rootSize, y + rootSize,
@@ -255,16 +267,19 @@ QuadTree = function(centerX, centerY, size) return {
                 x + rootSize, y - rootSize
             }
 
-            for i = 1, 8, 2 do
-                x, y = -- Reusing local var
+            for i = 1, 7, 2 do
+                -- Reusing local var
+                x, y =
                     quadCorners[i]   - gps.x,
                     quadCorners[i+1] - gps.y
 
+                -- Calculate transformed quadCorners coordinates.
+                -- All quad nodes has a height(z) of 0 and therefore precomputed by z1 to z4. 3rd column
                 local X, Y, Z, W =
-                    cameraTransform[1]*x + cameraTransform[5]*y,
-                    cameraTransform[2]*x + cameraTransform[6]*y,
-                    cameraTransform[3]*x + cameraTransform[7]*y + cameraTransform[15],
-                    cameraTransform[4]*x + cameraTransform[8]*y
+                    cameraTransform[1]*x + cameraTransform[5]*y - z1,
+                    cameraTransform[2]*x + cameraTransform[6]*y - z2,
+                    cameraTransform[3]*x + cameraTransform[7]*y - z3 + cameraTransform[15],
+                    cameraTransform[4]*x + cameraTransform[8]*y - z4
 
                 -- Reusing local var 'x' as a temporary holder for the table
                 x = {
@@ -278,47 +293,27 @@ QuadTree = function(centerX, centerY, size) return {
                 end
             end
 
-            x = 0 -- Reusing local var
+            local fully_inside, partially_inside = true, true
             for i = 1, 6 do
                 if points_in[i] == 0 then
-                    -- If none of the points are on the correct side of a plane then it is fully out of view.
-                    x = 0
+                    -- If all the points are on the wrong side of one of the frustum planes, then it is fully out of view.
+                    fully_inside, partially_inside = false, false
                     break
-                elseif points_in[i] == 4 then
-                    x = x+1
+                elseif points_in[i] ~= 4 then
+                    -- For the quad node to be fully inside the frustum, then every point need to be on the right side of the frustum planes.
+                    fully_inside = false
                 end
             end
 
-            if x == 4 then
-                full_in_view[#full_in_view+1] = root
-            elseif x > 0 then
-                for i = 1, #root do
-                    triangle_buffer[#triangle_buffer+1] = root[i]
-                end
-                for i = 1, 4 do
-                    if root.quadrant[i] then
-                        check_queue[#check_queue+1] = root.quadrant[i]
-                    end
-                end
+            if fully_inside then
+                full_in_view_queue[#full_in_view_queue+1] = root
+            elseif partially_inside then
+                addToTraversalQueue(root, check_queue)
             end
-
-            table.remove(check_queue, id)
-            id = #check_queue
         end
 
-        id = #full_in_view
-        while id > 0 do
-            local root = full_in_view[id]
-            for i = 1, #root do
-                triangle_buffer[#triangle_buffer+1] = root[i]
-            end
-            for i = 1, 4 do
-                if root.quadrant[i] then
-                    full_in_view[#full_in_view+1] = root.quadrant[i]
-                end
-            end
-            table.remove(full_in_view, id)
-            id = #full_in_view
+        while #full_in_view_queue > 0 do
+            addToTraversalQueue( table.remove(full_in_view_queue), full_in_view_queue )
         end
     end
 } end
