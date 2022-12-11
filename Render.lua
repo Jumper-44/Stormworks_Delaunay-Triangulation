@@ -251,11 +251,11 @@ QuadTree = function(centerX, centerY, size) return {
                 end
             end
 
-            local z1,z2,z3,z4 =
-                gps.z*cameraTransform[9],
-                gps.z*cameraTransform[10],
-                gps.z*cameraTransform[11],
-                gps.z*cameraTransform[12]
+        local z1,z2,z3,z4 =
+            gps.z*cameraTransform[9],
+            gps.z*cameraTransform[10],
+            gps.z*cameraTransform[11],
+            gps.z*cameraTransform[12]
 
         while #check_queue > 0 do
             local root = table.remove(check_queue)
