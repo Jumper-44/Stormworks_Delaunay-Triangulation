@@ -340,9 +340,9 @@ Delaunay = function(centerX, centerY, size)
 
 
 --#region init
-local delaunay, point =
+local delaunay, point, actionQueueLen =
     Delaunay(0,0, 1E5),
-    {}
+    {}, 0
 --#endregion init
 
 function onTick()
@@ -361,8 +361,8 @@ function onTick()
     -- Pass though cameratransform
     for i = 1, 16 do output.setNumber(i, input.getNumber(i)) end
 
-    -- Pass through color alpha value
-    output.setNumber(20, input.getNumber(20))
+    -- Convert color alpha and actionQueueLen to uint16 and pass though with a number
+    output.setNumber(20, int32_to_uint16(input.getNumber(20), actionQueueLen))
 
     --#endregion Get & pass though
 
@@ -380,31 +380,32 @@ function onTick()
         if point[1] ~= 0 and point[2] ~= 0 then
             delaunay.vertices[#delaunay.vertices + 1] = Point( table.unpack(point) )
             delaunay.triangulate()
-
-            for i = 0, 3 do
-                local id = #delaunay.actions_log
-
-                if id > 0 then
-                    if id == 1 then
-                        for j = 1, 3 do
-                            output.setNumber(20 + i*3 + j, int32_to_uint16(delaunay.actions_log[id][1][j].id, 0))
-                        end
-                        output.setBool(i*2 + 3, delaunay.actions_log[id][2])
-                        delaunay.actions_log[id] = nil
-                    else
-                        for j = 1, 3 do
-                            output.setNumber(20 + i*3 + j, int32_to_uint16(delaunay.actions_log[id][1][j].id, delaunay.actions_log[id-1][1][j].id))
-                        end
-                        output.setBool(i*2 + 3, delaunay.actions_log[id][2])
-                        output.setBool(i*2 + 4, delaunay.actions_log[id-1][2])
-                        delaunay.actions_log[id] = nil
-                        delaunay.actions_log[id-1] = nil
-                    end
-                else
-                    break
-                end
-            end
         end
 
+        actionQueueLen = #delaunay.actions_log
+
+        for i = 0, 3 do
+            local id = #delaunay.actions_log
+
+            if id > 0 then
+                if id == 1 then
+                    for j = 1, 3 do
+                        output.setNumber(20 + i*3 + j, int32_to_uint16(delaunay.actions_log[id][1][j].id, 0))
+                    end
+                    output.setBool(i*2 + 3, delaunay.actions_log[id][2])
+                    delaunay.actions_log[id] = nil
+                else
+                    for j = 1, 3 do
+                        output.setNumber(20 + i*3 + j, int32_to_uint16(delaunay.actions_log[id][1][j].id, delaunay.actions_log[id-1][1][j].id))
+                    end
+                    output.setBool(i*2 + 3, delaunay.actions_log[id][2])
+                    output.setBool(i*2 + 4, delaunay.actions_log[id-1][2])
+                    delaunay.actions_log[id] = nil
+                    delaunay.actions_log[id-1] = nil
+                end
+            else
+                break
+            end
+        end
     end
 end

@@ -69,12 +69,10 @@ local function int32_to_uint16(a, b) -- Takes 2 int32 and converts them to uint1
 end
 --]]
 
---[[ Using uint16_to_int32, but have it inlined to reduce chars - only used once
 local function uint16_to_int32(x) -- Takes a single number containing 2 uint16 and unpacks them.
 	x = ('I'):unpack(('f'):pack(x))
 	return x>>16, x&0xffff
 end
---]]
 --#endregion Conversion
 
 --#region vec3
@@ -363,7 +361,7 @@ end
 
 
 --#region init
-local point, cameraTransform_world, gps, vertices, quadTree, alpha = {}, {}, {}, {}, QuadTree(0,0,1E5), 0
+local point, cameraTransform_world, gps, vertices, quadTree, alpha, actionQueueLen = {}, {}, {}, {}, QuadTree(0,0,1E5), 0, 0
 --#endregion init
 
 
@@ -377,20 +375,6 @@ function onTick()
 
 
     if renderOn then
-        -- Get cameratransform
-        --[[
-        for i = 1, 6 do
-            -- inlined H_S_fp()
-            -- cameraTransform_world[(i-1)*2 + 1], cameraTransform_world[(i-1)*2 + 2] = H_S_fp(input.getNumber(i))
-            local convert, temp = function(h)
-                return ('f'):unpack(('I'):pack(((h&0x8000)<<16) | (((h&0x7c00)+0x1C000)<<13) | ((h&0x03FF)<<13)))
-            end, ('I'):unpack(('f'):pack(input.getNumber(i)))
-            cameraTransform_world[(i-1)*2 + 1], cameraTransform_world[(i-1)*2 + 2] = convert(temp>>16), convert(temp)
-        end
-
-        cameraTransform_world[15] = input.getNumber(7)
-        gps.x, gps.y, gps.z = input.getNumber(8), input.getNumber(9), input.getNumber(10)
-        --]]
         for i = 1, 12 do
             cameraTransform_world[i] = input.getNumber(i)
         end
@@ -406,16 +390,14 @@ function onTick()
             point.id = id
         end
 
-        alpha = input.getNumber(20)
+        -- Get color alpha and actionQueueLen
+        alpha, actionQueueLen = uint16_to_int32(input.getNumber(20))
 
         -- Get triangles
-        local t1, t2, temp = {}, {}, 0
+        local t1, t2 = {}, {}
         for i = 0, 3 do
             for j = 1, 3 do
-                -- inlined uint16_to_int32()
-                -- t1[j], t2[j] = uint16_to_int32(input.getNumber(14 + i*3 + j))
-                temp = ('I'):unpack(('f'):pack(input.getNumber(20 + i*3 + j)))
-                t1[j], t2[j] = temp>>16, temp&0xffff
+                t1[j], t2[j] = uint16_to_int32(input.getNumber(20 + i*3 + j))
             end
 
             if t1[1] == 0 then
@@ -462,6 +444,7 @@ function onDraw()
 
         setColor(255,255,255,125)
         screen.drawText(0,130,"Alpha: "..alpha)
+        screen.drawText(0,140,"SendQ: "..actionQueueLen)
         screen.drawText(0,150,"#DrawTriangles: "..currentDrawnTriangles)
 
 
