@@ -67,6 +67,7 @@ Sends the cameraTransform_world and laserPos to the next lua script (ingame)
 --]]
 --#endregion readme
 
+
 --#region kdtree
 local Dist2 = function(a,b)
     local sum, dis = 0, 0
@@ -149,18 +150,20 @@ local KDTree = function(k) return {
 } end
 --#endregion kdtree
 
---#region Initialization
-tau = math.pi*2
 
-getN = function(...)
+
+--#region Initialization
+local tau = math.pi*2
+
+local getN = function(...)
     local r = {}
     for i,v in ipairs({...}) do r[i]=input.getNumber(v) end
     return table.unpack(r)
 end
 
-Clamp = function(x,s,l) return x < s and s or x > l and l or x end
+local Clamp = function(x,s,l) return x < s and s or x > l and l or x end
 
-MatrixMul = function(m1,m2) --Assuming matrix multiplication is possible
+local MatrixMul = function(m1,m2) --Assuming matrix multiplication is possible
     local r = {}
     for i=1,#m2 do
         r[i] = {}
@@ -174,7 +177,7 @@ MatrixMul = function(m1,m2) --Assuming matrix multiplication is possible
     return r
 end
 
-MatrixTranspose = function(m)
+local MatrixTranspose = function(m)
     local r = {}
     for i=1,#m[1] do
         r[i] = {}
@@ -186,7 +189,7 @@ MatrixTranspose = function(m)
 end
 
 --Vector3 Class
-function Vec3(x,y,z) return
+local function Vec3(x,y,z) return
     {x=x or 0;y=y or 0;z=z or 0;
     add =   function(a,b) return Vec3(a.x+b.x, a.y+b.y, a.z+b.z) end;
     sub =   function(a,b) return Vec3(a.x-b.x, a.y-b.y, a.z-b.z) end;
@@ -198,33 +201,47 @@ function Vec3(x,y,z) return
     unpack = function(a, ...) return a.x, a.y, a.z, ... end}
 end
 
-tiltSensor = {} --forward, up, left
-gps,offset = Vec3(),{}
-memory = {ang=Vec3(), gps=Vec3()}
+local tiltSensor = {} --forward, up, left
+local gps, offset = Vec3(), {}
+local memory = {ang=Vec3(), gps=Vec3()}
 
-
+--[[ Sending GPS coordinates instead of combining translation with the cameraTransform
 translationMatrix_world = {
     {1,0,0,0},
     {0,1,0,0},
     {0,0,1,0},
     {0,0,0,1}
 }
+--]]
 
-
-laserOFFSET = Vec3(0, 4.75, -0.5)
 
 local kdtree = KDTree(3)
-local minDist_squared = 30^2 -- How dense can a flat plane be
+local minDist_squared = 30^2 -- minDist_squared is assigned in onTick().
+
+local laserOFFSET = Vec3(
+    property.getNumber("L_x"),
+    property.getNumber("L_y"),
+    property.getNumber("L_z")
+)
 --#endregion Initialization
+
+
 
 --#region Screen Configuration
 ------------------------------------
 ------{ Screen Configuration }------ https://pastebin.com/hkV8csW5
 ------------------------------------
-w,h=160,160 --Width & Height in pixels.
-cx,cy=w/2,h/2 --Don't touch    -    cx AND cy ARE NOT USED IN THIS SCRIPT BUT KEPT FOR COMPLETENESS TO EXPLANATION
+local w, h = property.getNumber("w"), property.getNumber("h") --Width & Height in pixels.
+-- cx,cy=w/2,h/2 -- Since the cameraTransform is only calculated here, some things are definded in 'Render.lua'
 
-SCREEN={near=0, sizeX=0.7 ,sizeY=0.7, placementOffsetX=0, placementOffsetY=-0.01, centerX=cx, centerY=cy} -- change centerX|Y in 'Render.lua'
+-- SCREEN={near=0, sizeX=0.7, sizeY=0.7, placementOffsetX=0, placementOffsetY=-0.01}       -- , centerX=cx, centerY=cy}
+local SCREEN={
+    near=property.getNumber("near"),
+    sizeX=property.getNumber("sizeX"),
+    sizeY=property.getNumber("sizeY"),
+    placementOffsetX=property.getNumber("offsetX"),
+    placementOffsetY=property.getNumber("offsetY")
+}
 --[[SCREEN Explanation
 -near is the distance from tip of the (compact pilot) seat to the screen in meters.
  
@@ -243,14 +260,19 @@ Example SCREEN of a 3x3 HUD:
 SCREEN={near=0.25, sizeX=0.7 ,sizeY=0.7, placementOffsetX=0, placementOffsetY=0.01, centerX=cx, centerY=cy}
 --]]
 
-offset.gps = Vec3(0, 3.5, 0.5) -- X:+Right, Y:+Foward, Z:+Up. Offset GPS to the block of the head.
-offset.tick = 3 --It takes a few ticks from getting the newest data to presenting it, so predicting the future position by a few ticks helps with Vehicle GPS & Rotation.
+offset.gps = Vec3(  -- X:+Right, Y:+Foward, Z:+Up. Offset GPS to the block of the head.
+    property.getNumber("x"),
+    property.getNumber("y"),
+    property.getNumber("z")
+)
+offset.tick = property.getNumber("tick") --It takes a few ticks from getting the newest data to presenting it, so predicting the future position by a few ticks helps with Vehicle GPS & Rotation.
 
-f=1E4 --Render Distance.
+local f = property.getNumber("renderDistance")
 
-aspectRatio=w/h
+local aspectRatio=w/h
 ------------------------------------
 --#endregion Screen Configuration
+
 
 
 function onTick()
@@ -294,25 +316,25 @@ function onTick()
         --------------------------------------
 
 
-        ------{ Player Head Position }------
-        headAzimuthAng =    Clamp(lookX, -0.277, 0.277) * 0.408 * tau -- 0.408 is to make 100° to 40.8°
-        headElevationAng =  Clamp(lookY, -0.125, 0.125) * 0.9 * tau + 0.404 + math.abs(headAzimuthAng/0.7101) * 0.122 -- 0.9 is to make 45° to 40.5°, 0.404 rad is 23.2°. 0.122 rad is 7° at max yaw.
+        do ------{ Player Head Position }------
+            local headAzimuthAng =    Clamp(lookX, -0.277, 0.277) * 0.408 * tau -- 0.408 is to make 100° to 40.8°
+            local headElevationAng =  Clamp(lookY, -0.125, 0.125) * 0.9 * tau + 0.404 + math.abs(headAzimuthAng/0.7101) * 0.122 -- 0.9 is to make 45° to 40.5°, 0.404 rad is 23.2°. 0.122 rad is 7° at max yaw.
 
-        distance = math.cos(headAzimuthAng) * 0.1523
-        offset.head = Vec3(
-            math.sin(headAzimuthAng) * 0.1523,
-            math.cos(headElevationAng) * distance +(isFemale and 0.132 or 0.161),
-            math.sin(headElevationAng) * distance -(isFemale and 0.141 or 0.023)
-        )
-        ------------------------------------
+            local distance = math.cos(headAzimuthAng) * 0.1523
+            offset.head = Vec3(
+                math.sin(headAzimuthAng) * 0.1523,
+                math.cos(headElevationAng) * distance +(isFemale and 0.132 or 0.161),
+                math.sin(headElevationAng) * distance -(isFemale and 0.141 or 0.023)
+            )
+        end -----------------------------------
 
 
         --{ Perspective Projection Matrix Setup }--
-        n=SCREEN.near+0.625 -offset.head.y
-        r=SCREEN.sizeX/2    +SCREEN.placementOffsetX    -offset.head.x
-        l=-SCREEN.sizeX/2   +SCREEN.placementOffsetX    -offset.head.x
-        t=SCREEN.sizeY/2    +SCREEN.placementOffsetY    -offset.head.z
-        b=-SCREEN.sizeY/2   +SCREEN.placementOffsetY    -offset.head.z
+        local n=SCREEN.near+0.625 -offset.head.y
+        local r=SCREEN.sizeX/2    +SCREEN.placementOffsetX    -offset.head.x
+        local l=-SCREEN.sizeX/2   +SCREEN.placementOffsetX    -offset.head.x
+        local t=SCREEN.sizeY/2    +SCREEN.placementOffsetY    -offset.head.z
+        local b=-SCREEN.sizeY/2   +SCREEN.placementOffsetY    -offset.head.z
 
         --Right hand rule and looking down the +Y axis, +X is right and +Z is up. Projects to x|y:coordinates [-1;1], z:depth [0;1], w:homogeneous coordinate
         perspectiveProjectionMatrix = {
@@ -337,16 +359,14 @@ function onTick()
 
 
         ------{ Translation Matrix Setup }------
-        -- translate_world = Vec3( table.unpack( MatrixMul(rotationMatrixZXY, {{offset.gps:add(offset.head):unpack(0)}})[1] ) ):add(gps)
-        -- translationMatrix_world[4] = {Vec3():sub(translate_world):unpack(1)}
-
         translate_world = Vec3( table.unpack( MatrixMul(rotationMatrixZXY, {{offset.gps:add(offset.head):unpack(0)}})[1] ) ):add(gps)
+        -- translationMatrix_world[4] = {Vec3():sub(translate_world):unpack(1)}
         ----------------------------------------
 
 
         ------{ Final Camera Transform Matrix }-----
         -- cameraTransform_world = MatrixMul(perspectiveProjectionMatrix, MatrixMul(MatrixTranspose(rotationMatrixZXY), translationMatrix_world))
-        cameraTransform_world = MatrixMul(perspectiveProjectionMatrix, MatrixMul(MatrixTranspose(rotationMatrixZXY), translationMatrix_world))
+        cameraTransform_world = MatrixMul(perspectiveProjectionMatrix, MatrixTranspose(rotationMatrixZXY))
         --------------------------------------------
 
 
@@ -363,39 +383,51 @@ function onTick()
         output.setNumber(16, translate_world.z)
         --#endregion cameraTransform_world
 
+
         --#region laserPos
-        laserDistance, laserCompass, laserTiltSensor = getN(11,12,13)
+        do
+            local laserDistance, laserCompass, laserTiltSensor = getN(11,12,13)
 
-        if laserDistance > 1 and laserDistance < 4000 then
-            laserDistance = laserDistance + 0.375
-            local dis = math.cos((laserTiltSensor)*tau)*laserDistance
+            if laserDistance > 1 and laserDistance < 4000 then
+                laserDistance = laserDistance + 0.375
+                local dis = math.cos((laserTiltSensor)*tau)*laserDistance
 
-            laserPos = Vec3(
-                math.sin(-laserCompass*tau)*dis,
-                math.cos(-laserCompass*tau)*dis,
-                math.sin((laserTiltSensor)*tau)*laserDistance
-            )
+                -- Getting a vector with direction(tilt&compass) and length(laserDistance)
+                local laserPos = Vec3(
+                    math.sin(-laserCompass*tau)*dis,
+                    math.cos(-laserCompass*tau)*dis,
+                    math.sin((laserTiltSensor)*tau)*laserDistance
+                )
 
-            laserPos = Vec3( table.unpack( MatrixMul(rotationMatrixZXY, {{laserOFFSET:unpack(1)}})[1])):add(gps):add(laserPos)
+                -- laserPos = (Offset + GPS + laserPos)
+                laserPos = Vec3( table.unpack(  MatrixMul(rotationMatrixZXY, {{laserOFFSET:unpack(1)}})[1]  ) )
+                    :add(gps)
+                    :add(laserPos)
 
-            local point = {laserPos.x, laserPos.y}
-            point[3] = (laserPos.z < -5) and (math.max(laserPos.z, -5)+laserPos.z%1) or laserPos.z
+                local point = {
+                    laserPos.x,
+                    laserPos.y,
+                    (laserPos.z < -5) and (math.max(laserPos.z, -5)+laserPos.z%1) or laserPos.z -- Clamping height to -5 + z%1, to get a slight color variation of flat sea
+                }
 
-            local node, dist_squared = kdtree:nearestNeighbor(point)
+                -- Check the distance to the nearest saved point
+                local node, dist_squared = kdtree:nearestNeighbor(point)
 
-            if node == nil or dist_squared > minDist_squared - (node.point[3]-point[3])^2 then
-                kdtree:insert(point)
+                if node == nil or dist_squared > minDist_squared - (node.point[3]-point[3])^2 then
+                    kdtree:insert(point)
 
-                laserOutput = point
+                    laserOutput = point
+                end
             end
         end
         --#endregion laserPos
 
     end -- if renderOn
 
-    -- Outputs laserPos to 11-13
+    -- Outputs laserPos to 17-19
     for i = 1, 3 do output.setNumber(i+16, laserOutput[i]) end
 end
+
 
 --[[ debug
 laserPos = {}

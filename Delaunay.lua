@@ -106,7 +106,7 @@ local Quad = function(centerX, centerY, size) return {
 } end
 
 -- Specifically for triangles in which none overlaps. No duplicates in tree.
-QuadTree = function(centerX, centerY, size) return {
+local QuadTree = function(centerX, centerY, size) return {
     tree = Quad(centerX, centerY, size);
 
     -- Example: quadTree:insert(quadTree.tree, triangle)
@@ -215,7 +215,7 @@ return {
 --  root = nil;
 } end
 
-Delaunay = function(centerX, centerY, size)
+local Delaunay = function(centerX, centerY, size)
     local vertices, actions_log, quadTree =
         {n_vertices = 0},
         {},
@@ -294,7 +294,7 @@ Delaunay = function(centerX, centerY, size)
                         end
                     end
 
-                    -- Removes reference to other tables/triangles, so garbagecollection can collect
+                    -- Removes reference to other tables/triangles, so garbagecollection can collect (Not sure if neccecary for GB)
                     -- Also currently the same triangle can be added to the queue more than one time, so it only process its neighbor once.
                     currentTriangle.neighbor[j] = nil
                 end
@@ -311,7 +311,10 @@ Delaunay = function(centerX, centerY, size)
             end
 
 
-            -- Added references to new neighboring triangles
+            -- Adding references to new neighboring triangles
+            -- Comparing every triangle to every other triangle in 'new_triangles',
+            -- in which to only compare a to b, and not a to b && b to a, then a for loop is arranged that does so,
+            -- but the way it is structured then the last index of 'new_triangles' will not be added to the quadtree, so adding the last index right here.
             quadTree:insert(quadTree.tree, new_triangles[#new_triangles])
 
             for j = 1, #new_triangles - 1 do
@@ -340,9 +343,9 @@ Delaunay = function(centerX, centerY, size)
 
 
 --#region init
-local delaunay, point, actionQueueLen =
+local delaunay, point =
     Delaunay(0,0, 1E5),
-    {}, 0
+    {}
 --#endregion init
 
 function onTick()
@@ -361,8 +364,8 @@ function onTick()
     -- Pass though cameratransform
     for i = 1, 16 do output.setNumber(i, input.getNumber(i)) end
 
-    -- Convert color alpha and actionQueueLen to uint16 and pass though with a number
-    output.setNumber(20, int32_to_uint16(input.getNumber(20), actionQueueLen))
+    -- Pass though color alpha
+    output.setNumber(20, input.getNumber(20))
 
     --#endregion Get & pass though
 
@@ -378,11 +381,9 @@ function onTick()
     if renderOn then
 
         if point[1] ~= 0 and point[2] ~= 0 then
-            delaunay.vertices[#delaunay.vertices + 1] = Point( table.unpack(point) )
+            delaunay.vertices[#delaunay.vertices + 1] = Point( point[1], point[2], point[3] )
             delaunay.triangulate()
         end
-
-        actionQueueLen = #delaunay.actions_log
 
         for i = 0, 3 do
             local id = #delaunay.actions_log
