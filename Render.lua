@@ -360,7 +360,7 @@ QuadTree = function(centerX, centerY, size) return {
 LIGHT_DIRECTION = Normalize(Vec3(0, 0.1, -1))
 
 Color = function(normal, vertices)
-    dot, verticesUnderWater, color =
+    local dot, verticesUnderWater, color =
         Dot(normal, LIGHT_DIRECTION),
         0, nil
 
