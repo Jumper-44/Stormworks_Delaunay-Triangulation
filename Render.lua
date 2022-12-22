@@ -308,9 +308,8 @@ QuadTree = function(centerX, centerY, size) return {
 
                     -- Calculate transformed quadCorners coordinates to clip space.
                     -- All quad nodes has a height(z) of 0 and therefore precomputed by z[1-4].
-
                     local X,Y,Z,W =
-                        cameraTransform[1]*x + cameraTransform[5]*y -z[1],             -- + cameraTransform[13],
+                        cameraTransform[1]*x + cameraTransform[5]*y -z[1],            -- + cameraTransform[13],
                         cameraTransform[2]*x + cameraTransform[6]*y -z[2],            -- + cameraTransform[14],
                         cameraTransform[3]*x + cameraTransform[7]*y -z[3] + cameraTransform[15],
                         cameraTransform[4]*x + cameraTransform[8]*y -z[4]             -- + cameraTransform[16]
@@ -359,6 +358,7 @@ QuadTree = function(centerX, centerY, size) return {
 --#region init
 local point, cameraTransform_world, gps, vertices, quadTree, alpha = {}, {}, Vec3(), {}, QuadTree(0,0,1E5), 0
 --#endregion init
+
 
 
 --#region Triangle Handling
@@ -457,29 +457,22 @@ function onDraw()
 
     if renderOn then
         WorldToScreen(vertices, quadTree, cameraTransform_world, gps)
+        local setColor, drawTriangleF = screen.setColor, screen.drawTriangleF
 
-        local setColor, drawTriangleF, draw_startIndex =
-            screen.setColor,
-            screen.drawTriangleF,
-            #triangle_buffer<max_drawn_triangles and #triangle_buffer or max_drawn_triangles
-
-
-        for i = draw_startIndex, 1, -1 do
+        for i = #triangle_buffer, 1, -1 do
             local triangle = triangle_buffer[i]
 
             setColor(triangle.color.x, triangle.color.y, triangle.color.z)
-
             drawTriangleF(triangle.v1.x, triangle.v1.y, triangle.v2.x, triangle.v2.y, triangle.v3.x, triangle.v3.y)
         end
 
         setColor(0,0,0,255-alpha)
         screen.drawRectF(0,0,w,h)
 
-
         -- [[ debug
         setColor(255,255,255,125)
         screen.drawText(0,140, "A "..alpha)
-        screen.drawText(0,150, "Tri "..draw_startIndex.."/"..triangle_buffer_len_debug)
+        screen.drawText(0,150, "Tri "..#triangle_buffer.."/"..triangle_buffer_len_debug)
         -- ]]
     end
 end
