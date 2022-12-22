@@ -97,86 +97,79 @@ Normalize = function(a) return Scale(a, 1/Len(a)) end
 
 
 --#region Rendering
-w, h, max_drawn_triangles =
+w, h =
     property.getNumber("w"),
-    property.getNumber("h"),
-    property.getNumber("MDT")
+    property.getNumber("h")
 
-local cx,cy, SCREEN_centerX, SCREEN_centerY, triangle_buffer_refreshrate, triangle_buffer, frameCount =
+local cx,cy, SCREEN_centerX, SCREEN_centerY, triangle_buffer_refreshrate, max_drawn_triangles, triangle_buffer, frameCount, triangle_buffer_len_debug =
     w/2, h/2,
     w/2 + property.getNumber("pxOffsetX"),
     h/2 + property.getNumber("pxOffsetY"),
     property.getNumber("TBR"),
-    {}, 1
+    property.getNumber("MDT"),
+    {}, 1, 0
 
 
 WorldToScreen = function(vertices, quadTree, cameraTransform, gps)
-    local screen_triangles, vertex_buffer = {}, {}
-
-    if frameCount >= triangle_buffer_refreshrate then
+    if frameCount % triangle_buffer_refreshrate == 0 then
         triangle_buffer = {}
-        quadTree.frustumCull(quadTree.tree, cameraTransform, gps, triangle_buffer)
-        frameCount = 1
-    else
-        frameCount = frameCount+1
-    end
+        quadTree.frustumCull(quadTree.tree, cameraTransform, gps)
 
-    for i = #triangle_buffer, 1, -1 do -- Reverse iteration, so indexes can be removed from triangle_buffer
-        local v, id, w = {}, 0, 0
+        -- [[ only used in debug draw
+        triangle_buffer_len_debug = #triangle_buffer
+        --]]
+    end
+    frameCount = frameCount+1
+
+    for i = #triangle_buffer, 1, -1 do -- Reverse iteration, so indexes can be removed from triangle_buffer while traversing
+        local currentTriangle, v, currentVertex, w = triangle_buffer[i], {}, {}, 0
+        -- 'v' is the current triangle transformed vertices
+
         for j = 1, 3 do
-            id = triangle_buffer[i][j].id
-            if vertex_buffer[id] == nil then
+            currentVertex = vertices[currentTriangle[j].id]
+
+            if currentVertex.frame ~= frameCount then
+                currentVertex.frame = frameCount
 
                 local X, Y, Z, W =
-                    vertices[id].x - gps.x,
-                    vertices[id].y - gps.y,
-                    vertices[id].z - gps.z,
-                    {} -- W was 0, but now used as a temp local var
+                    currentVertex.x - gps.x,
+                    currentVertex.y - gps.y,
+                    currentVertex.z - gps.z,
+                    0
 
-                --[[ Reduced due to char limit
                 X,Y,Z,W =
                     cameraTransform[1]*X + cameraTransform[5]*Y + cameraTransform[9]*Z,             -- + cameraTransform[13],
                     cameraTransform[2]*X + cameraTransform[6]*Y + cameraTransform[10]*Z,            -- + cameraTransform[14],
                     cameraTransform[3]*X + cameraTransform[7]*Y + cameraTransform[11]*Z + cameraTransform[15],
                     cameraTransform[4]*X + cameraTransform[8]*Y + cameraTransform[12]*Z             -- + cameraTransform[16]
-                --]]
 
-                for k = 1, 4 do
-                    W[k] = cameraTransform[k]*X + cameraTransform[k+4]*Y + cameraTransform[k+8]*Z
-                end
-                X, Y, Z, W =
-                    W[1],
-                    W[2],
-                    W[3] + cameraTransform[15],
-                    W[4]
-
-
-                if (0<=Z and Z<=W) then --clip and discard points       -- (-W<=X and X<=W) and (-W<=Y and Y<=W) and (0<=Z and Z<=W)
+                if 0<=Z and Z<=W then -- Is vertex between near and far plane
                     w = 1/W
                     v[j] = {
                         x = X*w*cx + SCREEN_centerX,
                         y = Y*w*cy + SCREEN_centerY,
                         z = Z*w,
-                        isIn = (-W<=X and X<=W) and (-W<=Y and Y<=W)
+                        isIn = -W<=X and X<=W  and  -W<=Y and Y<=W
                     }
-                    vertex_buffer[id] = v[j]
+                    currentVertex.screen = v[j]
                 else -- x & y are screen coordinates, z is depth
-                    vertex_buffer[id] = false
+                    currentVertex.screen = false
                     v[j] = false
                 end
             else
-                v[j] = vertex_buffer[id]
+                v[j] = currentVertex.screen
             end
         end
 
-        if v[1] and v[2] and v[3] then -- if all vertices are within the near and far plane
-            if v[1].isIn or v[2].isIn or v[3].isIn then -- if atleast 1 visible vertex
-                if (v[1].x*v[2].y - v[2].x*v[1].y + v[2].x*v[3].y - v[3].x*v[2].y + v[3].x*v[1].y - v[1].x*v[3].y) > 0 then -- if the triangle is facing the camera, checks for CCW
-                    screen_triangles[#screen_triangles + 1] = {
-                        v1=v[1], v2=v[2], v3=v[3];
-                        color = triangle_buffer[i].color;
-                        depth = (1/3)*(v[1].z + v[2].z + v[3].z)
-                    }
+        local v1, v2, v3 = v[1], v[2], v[3]
+
+        if v1 and v2 and v3 then -- if all vertices are within the near and far plane
+            if v1.isIn or v2.isIn or v3.isIn then -- if atleast 1 visible vertex
+                if (v1.x*v2.y - v2.x*v1.y + v2.x*v3.y - v3.x*v2.y + v3.x*v1.y - v1.x*v3.y) > 0 then -- if the triangle is facing the camera, checks for CCW
+                    currentTriangle.v1=v1
+                    currentTriangle.v2=v2
+                    currentTriangle.v3=v3
+                    currentTriangle.depth = (1/3)*(v1.z + v2.z + v3.z)
 
                     goto continue
                 end
@@ -189,13 +182,16 @@ WorldToScreen = function(vertices, quadTree, cameraTransform, gps)
     end
 
     -- painter's algorithm
-    table.sort(screen_triangles,
+    table.sort(triangle_buffer,
         function(triangle1,triangle2)
-            return triangle1.depth > triangle2.depth
+            return triangle1.depth < triangle2.depth
         end
     )
 
-    return screen_triangles
+    for i = max_drawn_triangles, #triangle_buffer do
+        triangle_buffer[i] = nil
+    end
+
 end
 
 --#endregion Rendering
@@ -266,13 +262,14 @@ QuadTree = function(centerX, centerY, size) return {
     -- Frustum cull the quadTree and add the triangles in visible quads to the 'triangle_buffer'.
     -- Later the 'WorldToScreen' function will remove triangles in 'triangle_buffer' which are not visible in frustum.
     -- https://web.archive.org/web/20030810032130/http://www.markmorley.com:80/opengl/frustumculling.html
-    frustumCull = function(startRoot, cameraTransform, gps, triangle_buffer)
-        local check_queue, full_in_view_queue, z, addToTraversalQueue = {startRoot}, {}, {},
+    frustumCull = function(startRoot, cameraTransform, gps)
+        local check_queue, full_in_view_queue, z, table_remove, addToTraversalQueue = {startRoot}, {}, {}, table.remove,
             function(root, traversalQueue)
-                -- If the distance from the camera to the center of a quad node is greater than 500^2 m
-                -- and triangle_buffer is greater than the max_drawn_triangles amount then it will only add every third triangle of a quad node to the triangle_buffer,
+                -- If the distance from the camera to the center of a quad node is greater than 300^2 m
+                -- and triangle_buffer is greater than the max_drawn_triangles amount then it will only add every second triangle of a quad node to the triangle_buffer,
                 -- which is to get better performance while still able to slightly see in the distance when the amount triangles in view are high.
-                for i = 1, #root, ((root.centerX-gps.x)^2 + (root.centerY-gps.y)^2<25E4 or #triangle_buffer<max_drawn_triangles) and 1 or 3 do
+                local x, y = root.centerX-gps.x, root.centerY-gps.y
+                for i = 1, #root, (x*x+y*y<9E4 or #triangle_buffer<max_drawn_triangles) and 1 or 2 do
                     triangle_buffer[#triangle_buffer+1] = root[i]
                 end
 
@@ -289,19 +286,18 @@ QuadTree = function(centerX, centerY, size) return {
         end
 
         while #check_queue > 0 do
-            local root = table.remove(check_queue)
-            local x, y, size = root.centerX, root.centerY, root.size*2
+            local root = table_remove(check_queue)
+            local x, y, rootSize = root.centerX, root.centerY, root.size*2
 
             -- If the camera is within the boundary of the quad XY then just add it as partially inside, else frustum check each corner of the quad node
-            if math.abs(x-gps.x)<size and math.abs(y-gps.y)<size then
+            if math.abs(x-gps.x)<rootSize and math.abs(y-gps.y)<rootSize and gps.z<350 then
                 addToTraversalQueue(root, check_queue)
             else
-
                 local quadCorners, points_in_frustum, fully_inside, partially_inside = {
-                    x + size, y + size,
-                    x - size, y + size,
-                    x - size, y - size,
-                    x + size, y - size
+                    x + rootSize, y + rootSize,
+                    x - rootSize, y + rootSize,
+                    x - rootSize, y - rootSize,
+                    x + rootSize, y - rootSize
                 }, {}, true, true
 
                 for i = 1, 7, 2 do
@@ -310,25 +306,24 @@ QuadTree = function(centerX, centerY, size) return {
                         quadCorners[i]   - gps.x,
                         quadCorners[i+1] - gps.y
 
-                    -- Reusing local var 'size' to hold a table.
                     -- Calculate transformed quadCorners coordinates to clip space.
                     -- All quad nodes has a height(z) of 0 and therefore precomputed by z[1-4].
-                    size = {}
-                    for j = 1, 4 do
-                        size[j] = cameraTransform[j]*x + cameraTransform[j+4]*y - z[j]
-                    end
 
-                    -- Reusing local variables 'x' & 'y'
-                    x, y = size[3] + cameraTransform[15], size[4]
-                    x = {
-                        -y<=size[1], size[1]<=y,    -- -W<=X, X<=W,
-                        -y<=size[2], size[2]<=y,    -- -W<=Y, Y<=W,
-                        0<=x, x<=y                  -- 0<=Z, Z<=W
+                    local X,Y,Z,W =
+                        cameraTransform[1]*x + cameraTransform[5]*y -z[1],             -- + cameraTransform[13],
+                        cameraTransform[2]*x + cameraTransform[6]*y -z[2],            -- + cameraTransform[14],
+                        cameraTransform[3]*x + cameraTransform[7]*y -z[3] + cameraTransform[15],
+                        cameraTransform[4]*x + cameraTransform[8]*y -z[4]             -- + cameraTransform[16]
+
+                    -- Reusing local 'W'
+                    W = {
+                        -W<=X, X<=W,
+                        -W<=Y, Y<=W,
+                        0<=Z, Z<=W
                     }
 
-
                     for j = 1, 6 do
-                        points_in_frustum[j] = (points_in_frustum[j] or 0) + (x[j] and 1 or 0)
+                        points_in_frustum[j] = (points_in_frustum[j] or 0) + (W[j] and 1 or 0)
                     end
                 end
 
@@ -353,7 +348,7 @@ QuadTree = function(centerX, centerY, size) return {
         end
 
         while #full_in_view_queue > 0 do
-            addToTraversalQueue( table.remove(full_in_view_queue), full_in_view_queue )
+            addToTraversalQueue( table_remove(full_in_view_queue), full_in_view_queue )
         end
     end;
 } end
@@ -368,26 +363,6 @@ local point, cameraTransform_world, gps, vertices, quadTree, alpha = {}, {}, Vec
 
 --#region Triangle Handling
 LIGHT_DIRECTION = Normalize(Vec3(0, 0.1, -1))
-
---[[ inlined 'color' to 'Triangle_add_remove'
-Color = function(normal, triangle_vertices)
-    local dot, verticesUnderWater, color =
-        Dot(normal, LIGHT_DIRECTION),
-        0, nil
-
-    for i = 1, 3 do if triangle_vertices[i].z <= 0 then verticesUnderWater = verticesUnderWater + 1 end end
-
-    if verticesUnderWater > 1 then
-        color = {flat = Vec3(0,0,255), steep = Vec3(0,150,255)} -- water
-    else
-        color = {flat = Vec3(0,255,0), steep = Vec3(255,200,0)} -- ground
-    end
-
-    -- Squaring to get absolute value and better curve
-    dot = dot*dot
-    return Scale( Add(Scale(color.flat, dot), Scale(color.steep, 1-dot)), dot*dot*0.9 + 0.1 )
-end
---]]
 
 Triangle_add_remove = function(tri, bool_index)
     -- 'tri' parameter == {v1_id, v2_id, v3_id}
@@ -426,7 +401,7 @@ function onTick()
 
     if clear then
         vertices, quadTree = {}, QuadTree(gps.x, gps.y, 5E4)
-        triangle_buffer, frameCount = {}, 1
+        triangle_buffer, frameCount = {}, 0
     end
 
 
@@ -444,6 +419,7 @@ function onTick()
             local id = #vertices+1
             vertices[id] = point
             point.id = id
+            point.frame = -1
         end
 
         -- Get color alpha
@@ -480,15 +456,16 @@ end
 function onDraw()
 
     if renderOn then
-        local setColor, drawTriangleF, triangles =
+        WorldToScreen(vertices, quadTree, cameraTransform_world, gps)
+
+        local setColor, drawTriangleF, draw_startIndex =
             screen.setColor,
             screen.drawTriangleF,
-            WorldToScreen(vertices, quadTree, cameraTransform_world, gps)
+            #triangle_buffer<max_drawn_triangles and #triangle_buffer or max_drawn_triangles
 
-        triangles_drawStartIndex = math.max(#triangles+1-max_drawn_triangles, 1)
 
-        for i = triangles_drawStartIndex, #triangles do
-            local triangle = triangles[i]
+        for i = draw_startIndex, 1, -1 do
+            local triangle = triangle_buffer[i]
 
             setColor(triangle.color.x, triangle.color.y, triangle.color.z)
 
@@ -502,7 +479,7 @@ function onDraw()
         -- [[ debug
         setColor(255,255,255,125)
         screen.drawText(0,140, "A "..alpha)
-        screen.drawText(0,150, "Tri "..#triangles+1-triangles_drawStartIndex)
+        screen.drawText(0,150, "Tri "..draw_startIndex.."/"..triangle_buffer_len_debug)
         -- ]]
     end
 end
