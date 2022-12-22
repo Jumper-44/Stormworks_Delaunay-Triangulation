@@ -369,6 +369,7 @@ local point, cameraTransform_world, gps, vertices, quadTree, alpha = {}, {}, Vec
 --#region Triangle Handling
 LIGHT_DIRECTION = Normalize(Vec3(0, 0.1, -1))
 
+--[[ inlined 'color' to 'Triangle_add_remove'
 Color = function(normal, triangle_vertices)
     local dot, verticesUnderWater, color =
         Dot(normal, LIGHT_DIRECTION),
@@ -382,30 +383,34 @@ Color = function(normal, triangle_vertices)
         color = {flat = Vec3(0,255,0), steep = Vec3(255,200,0)} -- ground
     end
 
+    -- Squaring to get absolute value and better curve
     dot = dot*dot
     return Scale( Add(Scale(color.flat, dot), Scale(color.steep, 1-dot)), dot*dot*0.9 + 0.1 )
 end
-
---[[ Point Class is substituted by Vec3(), as 'id' is no longer used
-local Point = function(x,y,z) return {
-    x=x; y=y; z=z or 0; --id=id or 0
-} end
-]]
-
---[[ Triangle Class - Inlined in 'Triangle_add_remove()' to save chars
-Triangle = function(p1,p2,p3) return {
-    p1;
-    p2; -- Triangle should be CCW winding order
-    p3;
-    color = Color(Normalize( Cross(Sub(p1,p2), Sub(p2,p3)) ), {p1,p2,p3})
-} end
 --]]
 
-Triangle_add_remove = function(tri, i)
+Triangle_add_remove = function(tri, bool_index)
+    -- 'tri' parameter == {v1_id, v2_id, v3_id}
     tri = {vertices[tri[1]], vertices[tri[2]], vertices[tri[3]]}
+    -- Triangles have a CCW winding order.
 
-    if input.getBool(i) then
-        tri.color = Color(Normalize( Cross(Sub(tri[1],tri[2]), Sub(tri[2],tri[3])) ), tri)
+    if input.getBool(bool_index) then
+        --#region triangle.color
+        local dot, verticesUnderWater, color =
+            Dot(Normalize( Cross(Sub(tri[1],tri[2]), Sub(tri[2],tri[3])) ), LIGHT_DIRECTION)^2, -- dot is squared to get absolute value and better curve
+            0, nil
+
+        for i = 1, 3 do if tri[i].z <= 0 then verticesUnderWater = verticesUnderWater + 1 end end
+
+        if verticesUnderWater > 1 then
+            color = {flat = Vec3(0,0,255), steep = Vec3(0,150,255)} -- water
+        else
+            color = {flat = Vec3(0,255,0), steep = Vec3(255,200,0)} -- ground
+        end
+
+        tri.color = Scale( Add(Scale(color.flat, dot), Scale(color.steep, 1-dot)), dot*dot*0.9 + 0.1 )
+        --#endregion triangle.color
+
         quadTree:insertTriangle(quadTree.tree, tri)
     else
         quadTree:searchAndRemove(quadTree.tree, tri)
@@ -445,8 +450,9 @@ function onTick()
         alpha = input.getNumber(20)
 
         -- Get triangles
-        local t1, t2, temp = {}, {}, 0
         for i = 0, 3 do
+            local t1, t2, temp = {}, {}, 0
+
             for j = 1, 3 do
                 -- Inlined uint16_to_int32()
                 -- t1[j], t2[j] = uint16_to_int32(input.getNumber(20 + i*3 + j))
