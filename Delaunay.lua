@@ -105,7 +105,7 @@ local Quad = function(centerX, centerY, size) return {
         quadrant = {}
 } end
 
--- Specifically for triangles in which none overlaps. No duplicates in tree.
+-- Specifically for triangles(3 point AABB) in which none overlaps(2.5d triangle mesh). No duplicates in tree.
 local QuadTree = function(centerX, centerY, size) return {
     tree = Quad(centerX, centerY, size);
 
@@ -168,7 +168,7 @@ local QuadTree = function(centerX, centerY, size) return {
                 break
             end
         end
-    end
+    end;
 } end
 --#endregion QuadTree
 
@@ -202,7 +202,7 @@ local Point = function(x,y,z,id) return {
 } end
 
 -- Triangle Class
-local Triangle = function(p1,p2,p3, ...)
+local Triangle = function(p1,p2,p3, n1,n2,n3)
     local normal = Normalize( Cross(Sub(p1,p2), Sub(p2,p3)) )
     local CCW = normal.z < 0
 
@@ -211,7 +211,7 @@ return {
     CCW and p2 or p3;
     CCW and p3 or p2;
     circle = GetCircumCircle(p1,p2,p3);
-    neighbor = {...};
+    neighbor = {n1,n2,n3};
 --  root = nil;
 } end
 
@@ -375,8 +375,6 @@ function onTick()
         delaunay = Delaunay(0,0, 1E5)
     end
 
-    -- Clear triangle output
-    for i = 21, 32 do output.setNumber(i,0) end
 
     if renderOn then
 
@@ -405,6 +403,8 @@ function onTick()
                     delaunay.actions_log[id-1] = nil
                 end
             else
+                -- Clear the rest of the triangle output when #delaunay.actions_log is 0
+                for j = 21 + i*3, 32 do output.setNumber(j, 0) end
                 break
             end
         end

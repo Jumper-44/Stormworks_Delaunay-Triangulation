@@ -121,10 +121,10 @@ WorldToScreen = function(vertices, quadTree, cameraTransform, gps)
         frameCount = frameCount+1
     end
 
-    for i = 1, #triangle_buffer do
-        local currentTriangle, v, id, w = triangle_buffer[i], {}, 0, 0
+    for i = #triangle_buffer, 1, -1 do -- Reverse iteration, so indexes can be removed from triangle_buffer
+        local v, id, w = {}, 0, 0
         for j = 1, 3 do
-            id = currentTriangle[j].id
+            id = triangle_buffer[i][j].id
             if vertex_buffer[id] == nil then
 
                 local X, Y, Z, W =
@@ -174,12 +174,18 @@ WorldToScreen = function(vertices, quadTree, cameraTransform, gps)
                 if (v[1].x*v[2].y - v[2].x*v[1].y + v[2].x*v[3].y - v[3].x*v[2].y + v[3].x*v[1].y - v[1].x*v[3].y) > 0 then -- if the triangle is facing the camera, checks for CCW
                     screen_triangles[#screen_triangles + 1] = {
                         v1=v[1], v2=v[2], v3=v[3];
-                        color = currentTriangle.color;
+                        color = triangle_buffer[i].color;
                         depth = (1/3)*(v[1].z + v[2].z + v[3].z)
                     }
+
+                    goto continue
                 end
             end
         end
+
+        -- Remove the triangle from 'triangle_buffer' if it's not in frustum.
+        table.remove(triangle_buffer, i)
+        ::continue::
     end
 
     -- painter's algorithm
@@ -215,7 +221,7 @@ BoundaryCheck = function(root, table)
 end
 
 
--- Specifically for triangles in which none overlaps. No duplicates in tree.
+-- Specifically for triangles(3 point AABB). No duplicates in tree.
 QuadTree = function(centerX, centerY, size) return {
     tree = Quad(centerX, centerY, size);
 
@@ -244,27 +250,33 @@ QuadTree = function(centerX, centerY, size) return {
         end
     end;
 
+    -- Bruteforce search the tree for matching triangle to remove.
     -- Example: quadTree:remove(quadTree.tree, {p1, p2, p3})
     searchAndRemove = function(self, root, vertices)
         for i = 1, #root do
             if root[i][1] == vertices[1] and root[i][2] == vertices[2] and root[i][3] == vertices[3] then
-                table.remove(root, i)
-                return
+                return table.remove(root, i)
             end
         end
 
+        -- Assuming child quad node exist.
         return self:searchAndRemove(root.quadrant[(BoundaryCheck(root, vertices))], vertices)
     end;
 
-    -- Frustum cull the quadTree and add the triangles in visible quads to the 'triangle_buffer'
+    -- Frustum cull the quadTree and add the triangles in visible quads to the 'triangle_buffer'.
+    -- Later the 'WorldToScreen' function will remove triangles in 'triangle_buffer' which are not visible in frustum.
     -- https://web.archive.org/web/20030810032130/http://www.markmorley.com:80/opengl/frustumculling.html
     frustumCull = function(startRoot, cameraTransform, gps, triangle_buffer)
         local check_queue, full_in_view_queue, z, addToTraversalQueue = {startRoot}, {}, {},
             function(root, traversalQueue)
-                -- if the amount in triangle_buffer is more than max_drawn_triangles, then only add every third triangle in root to triangle_buffer
-                for i = 1, #root, #triangle_buffer<max_drawn_triangles and 1 or 3 do
+                -- If the distance from the camera to the center of a quad node is greater than 500^2 m
+                -- and triangle_buffer is greater than the max_drawn_triangles amount then it will only add every third triangle of a quad node to the triangle_buffer,
+                -- which is to get better performance while still able to slightly see in the distance when the amount triangles in view are high.
+                for i = 1, #root, ((root.centerX-gps.x)^2 + (root.centerY-gps.y)^2<25E4 or #triangle_buffer<max_drawn_triangles) and 1 or 3 do
                     triangle_buffer[#triangle_buffer+1] = root[i]
                 end
+
+                -- If a quad child exist then add it to queue.
                 for i = 1, 4 do
                     if root.quadrant[i] then
                         traversalQueue[#traversalQueue+1] = root.quadrant[i]
@@ -280,11 +292,10 @@ QuadTree = function(centerX, centerY, size) return {
             local root = table.remove(check_queue)
             local x, y, size = root.centerX, root.centerY, root.size*2
 
+            -- If the camera is within the boundary of the quad XY then just add it as partially inside, else frustum check each corner of the quad node
             if math.abs(x-gps.x)<size and math.abs(y-gps.y)<size then
-                -- If the camera is within the boundary of the quad XY then just add it as partially inside
                 addToTraversalQueue(root, check_queue)
-
-            else    --elseif #triangle_buffer < max_drawn_triangles then
+            else
 
                 local quadCorners, points_in_frustum, fully_inside, partially_inside = {
                     x + size, y + size,
@@ -299,9 +310,9 @@ QuadTree = function(centerX, centerY, size) return {
                         quadCorners[i]   - gps.x,
                         quadCorners[i+1] - gps.y
 
-                    -- Reusing local var 'size' to hold a table
-                    -- Calculate transformed quadCorners coordinates
-                    -- All quad nodes has a height(z) of 0 and therefore precomputed by z[1-4]
+                    -- Reusing local var 'size' to hold a table.
+                    -- Calculate transformed quadCorners coordinates to clip space.
+                    -- All quad nodes has a height(z) of 0 and therefore precomputed by z[1-4].
                     size = {}
                     for j = 1, 4 do
                         size[j] = cameraTransform[j]*x + cameraTransform[j+4]*y - z[j]
@@ -310,17 +321,11 @@ QuadTree = function(centerX, centerY, size) return {
                     -- Reusing local variables 'x' & 'y'
                     x, y = size[3] + cameraTransform[15], size[4]
                     x = {
-                        -y<=size[1], size[1]<=y,
-                        -y<=size[2], size[2]<=y,
-                        0<=x, x<=y
+                        -y<=size[1], size[1]<=y,    -- -W<=X, X<=W,
+                        -y<=size[2], size[2]<=y,    -- -W<=Y, Y<=W,
+                        0<=x, x<=y                  -- 0<=Z, Z<=W
                     }
-                    --[[ With proper names
-                    isWithin = {
-                        -W<=X, X<=W,
-                        -W<=Y, Y<=W,
-                        0<=Z, Z<=W
-                    }
-                    --]]
+
 
                     for j = 1, 6 do
                         points_in_frustum[j] = (points_in_frustum[j] or 0) + (x[j] and 1 or 0)
@@ -350,21 +355,26 @@ QuadTree = function(centerX, centerY, size) return {
         while #full_in_view_queue > 0 do
             addToTraversalQueue( table.remove(full_in_view_queue), full_in_view_queue )
         end
-    end
+    end;
 } end
 --#endregion QuadTree
 
 
 
+--#region init
+local point, cameraTransform_world, gps, vertices, quadTree, alpha = {}, {}, Vec3(), {}, QuadTree(0,0,1E5), 0
+--#endregion init
+
+
 --#region Triangle Handling
 LIGHT_DIRECTION = Normalize(Vec3(0, 0.1, -1))
 
-Color = function(normal, vertices)
+Color = function(normal, triangle_vertices)
     local dot, verticesUnderWater, color =
         Dot(normal, LIGHT_DIRECTION),
         0, nil
 
-    for i = 1, 3 do if vertices[i].z <= 0 then verticesUnderWater = verticesUnderWater + 1 end end
+    for i = 1, 3 do if triangle_vertices[i].z <= 0 then verticesUnderWater = verticesUnderWater + 1 end end
 
     if verticesUnderWater > 1 then
         color = {flat = Vec3(0,0,255), steep = Vec3(0,150,255)} -- water
@@ -376,35 +386,32 @@ Color = function(normal, vertices)
     return Scale( Add(Scale(color.flat, dot), Scale(color.steep, 1-dot)), dot*dot*0.9 + 0.1 )
 end
 
---[[ Point Class is substituted by Vec3()
+--[[ Point Class is substituted by Vec3(), as 'id' is no longer used
 local Point = function(x,y,z) return {
     x=x; y=y; z=z or 0; --id=id or 0
 } end
 ]]
 
--- Triangle Class
+--[[ Triangle Class - Inlined in 'Triangle_add_remove()' to save chars
 Triangle = function(p1,p2,p3) return {
     p1;
     p2; -- Triangle should be CCW winding order
     p3;
-    color = Color(Normalize( Cross(Sub(p1,p2), Sub(p2,p3)) ), {p1,p2,p3});
---  root = nil;
+    color = Color(Normalize( Cross(Sub(p1,p2), Sub(p2,p3)) ), {p1,p2,p3})
 } end
+--]]
 
-Triangle_add_remove = function(vertices, quadTree, t, i)
+Triangle_add_remove = function(tri, i)
+    tri = {vertices[tri[1]], vertices[tri[2]], vertices[tri[3]]}
+
     if input.getBool(i) then
-        quadTree:insertTriangle(quadTree.tree, Triangle(vertices[t[1]], vertices[t[2]], vertices[t[3]]))
+        tri.color = Color(Normalize( Cross(Sub(tri[1],tri[2]), Sub(tri[2],tri[3])) ), tri)
+        quadTree:insertTriangle(quadTree.tree, tri)
     else
-        quadTree:searchAndRemove(quadTree.tree, {vertices[t[1]], vertices[t[2]], vertices[t[3]]})
+        quadTree:searchAndRemove(quadTree.tree, tri)
     end
 end
 --#endregion Triangle Handling
-
-
-
---#region init
-local point, cameraTransform_world, gps, vertices, quadTree, alpha = {}, {}, Vec3(), {}, QuadTree(0,0,1E5), 0
---#endregion init
 
 
 
@@ -423,7 +430,7 @@ function onTick()
             cameraTransform_world[i] = input.getNumber(i)
         end
         cameraTransform_world[15] = input.getNumber(13)
-        gps.x, gps.y, gps.z = input.getNumber(14), input.getNumber(15), input.getNumber(16)
+        gps = Vec3(input.getNumber(14), input.getNumber(15), input.getNumber(16))
 
 
         -- Get and try add point
@@ -447,15 +454,17 @@ function onTick()
 	            t1[j], t2[j] = temp>>16, temp&0xffff
             end
 
+            temp = i*2 + 3
+
             if t1[1] == 0 then
                 break
             elseif t2[1] == 0 then
-                Triangle_add_remove(vertices, quadTree, t1, i*2 + 3)
+                Triangle_add_remove(t1, temp)
                 break
             end
 
-            Triangle_add_remove(vertices, quadTree, t1, i*2 + 3)
-            Triangle_add_remove(vertices, quadTree, t2, i*2 + 4)
+            Triangle_add_remove(t1, temp)
+            Triangle_add_remove(t2, temp+1)
         end
 
     end
@@ -483,9 +492,12 @@ function onDraw()
         setColor(0,0,0,255-alpha)
         screen.drawRectF(0,0,w,h)
 
+
+        -- [[ debug
         setColor(255,255,255,125)
         screen.drawText(0,140, "A "..alpha)
-        screen.drawText(0,150, "Tri "..#triangles+1-triangles_drawStartIndex.."/"..#triangle_buffer)
+        screen.drawText(0,150, "Tri "..#triangles+1-triangles_drawStartIndex)
+        -- ]]
     end
 end
 

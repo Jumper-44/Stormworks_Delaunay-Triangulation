@@ -201,11 +201,15 @@ local function Vec3(x,y,z) return
     unpack = function(a, ...) return a.x, a.y, a.z, ... end}
 end
 
-local tiltSensor = {} --forward, up, left
-local gps, offset = Vec3(), {}
+local tiltSensor = { --[[forward, up, left]] }
+local gps, ang, offset = Vec3(), Vec3(), { --[[gps, tick, head]] }
 local memory = {ang=Vec3(), gps=Vec3()}
 
---[[ Sending GPS coordinates instead of combining translation with the cameraTransform
+local renderOn, clear, isFemale, compass, lookX, lookY = false, false, false, 0, 0, 0
+local perspectiveProjectionMatrix, rotationMatrixZXY, camera_translation, cameraTransform_world = {}, {}, {}, {}
+
+
+--[[ Sending camera/eye GPS coordinates instead of combining translation with the cameraTransform
 translationMatrix_world = {
     {1,0,0,0},
     {0,1,0,0},
@@ -254,7 +258,8 @@ Note that for example the 3x3 HUD when centered you'd want to have like "placeme
 which can be noticeable after the projection. Even this 1 cm matters. Of course the further away the screen is the less noticeable it is, as FOV gets smaller and the limit of screen resolution too.
  
 -centerX|Y are the pixel coordinates of where to display on the screen if you want to offset.
-Needed if using a camera pointed to a higher resolution monitor for higher screen resolution, then you may want to "cx-1" on x, else Default: centerX=cx, centerY=cy
+If a camera pointed to a higher resolution monitor for higher screen resolution, then you may want to "cx-1" on x, else Default: centerX=cx, centerY=cy
+(This parameter is in the script that renders)
  
 Example SCREEN of a 3x3 HUD:
 SCREEN={near=0.25, sizeX=0.7 ,sizeY=0.7, placementOffsetX=0, placementOffsetY=0.01, centerX=cx, centerY=cy}
@@ -278,6 +283,7 @@ local aspectRatio=w/h
 function onTick()
     renderOn = input.getBool(1)
     clear = input.getBool(3)
+    minDist_squared = input.getNumber(15)^2
 
     if clear then
         kdtree = KDTree(3)
@@ -290,6 +296,7 @@ function onTick()
     ------------------
 
     local laserOutput = {0,0,0}
+
 
     if renderOn then
         --#region cameraTransform_world
@@ -329,38 +336,41 @@ function onTick()
         end -----------------------------------
 
 
-        --{ Perspective Projection Matrix Setup }--
-        local n=SCREEN.near+0.625 -offset.head.y
-        local r=SCREEN.sizeX/2    +SCREEN.placementOffsetX    -offset.head.x
-        local l=-SCREEN.sizeX/2   +SCREEN.placementOffsetX    -offset.head.x
-        local t=SCREEN.sizeY/2    +SCREEN.placementOffsetY    -offset.head.z
-        local b=-SCREEN.sizeY/2   +SCREEN.placementOffsetY    -offset.head.z
+        do --{ Perspective Projection Matrix Setup }--
+            local n=SCREEN.near+0.625 -offset.head.y
+            local r=SCREEN.sizeX/2    +SCREEN.placementOffsetX    -offset.head.x
+            local l=-SCREEN.sizeX/2   +SCREEN.placementOffsetX    -offset.head.x
+            local t=SCREEN.sizeY/2    +SCREEN.placementOffsetY    -offset.head.z
+            local b=-SCREEN.sizeY/2   +SCREEN.placementOffsetY    -offset.head.z
 
-        --Right hand rule and looking down the +Y axis, +X is right and +Z is up. Projects to x|y:coordinates [-1;1], z:depth [0;1], w:homogeneous coordinate
-        perspectiveProjectionMatrix = {
-            {2*n/(r-l)*aspectRatio,     0,              0,              0},
-            {-(r+l)/(r-l),              -(b+t)/(b-t),   f/(f-n),        1},
-            {0,                         2*n/(b-t),      0,              0},
-            {0,                         0,              -f*n/(f-n),     0}
-        }
-        -------------------------------------------
+            --Right hand rule and looking down the +Y axis, +X is right and +Z is up. Projects to x|y:coordinates [-1;1], z:depth [0;1], w:homogeneous coordinate
+            perspectiveProjectionMatrix = {
+                {2*n/(r-l)*aspectRatio,     0,              0,              0},
+                {-(r+l)/(r-l),              -(b+t)/(b-t),   f/(f-n),        1},
+                {0,                         2*n/(b-t),      0,              0},
+                {0,                         0,              -f*n/(f-n),     0}
+            }
+        end ------------------------------------------
 
 
-        ------{ Rotation Matrix Setup }-----
-        local sx,sy,sz, cx,cy,cz = math.sin(ang.x),math.sin(ang.y),math.sin(ang.z), math.cos(ang.x),math.cos(ang.y),math.cos(ang.z)
+        do ------{ Rotation Matrix Setup }-----
+            local sx,sy,sz, cx,cy,cz = math.sin(ang.x),math.sin(ang.y),math.sin(ang.z), math.cos(ang.x),math.cos(ang.y),math.cos(ang.z)
 
-        rotationMatrixZXY = {
-            {cz*cy-sz*sx*sy,    sz*cy+cz*sx*sy,     -cx*sy, 0},
-            {-sz*cx,            cz*cx,              sx,     0},
-            {cz*sy+sz*sx*cy,    sz*sy-cz*sx*cy,     cx*cy,  0},
-            {0,                 0,                  0,      1}
-        }
-        ------------------------------------
+            rotationMatrixZXY = {
+                {cz*cy-sz*sx*sy,    sz*cy+cz*sx*sy,     -cx*sy, 0},
+                {-sz*cx,            cz*cx,              sx,     0},
+                {cz*sy+sz*sx*cy,    sz*sy-cz*sx*cy,     cx*cy,  0},
+                {0,                 0,                  0,      1}
+            }
+        end -----------------------------------
 
 
         ------{ Translation Matrix Setup }------
-        translate_world = Vec3( table.unpack( MatrixMul(rotationMatrixZXY, {{offset.gps:add(offset.head):unpack(0)}})[1] ) ):add(gps)
-        -- translationMatrix_world[4] = {Vec3():sub(translate_world):unpack(1)}
+        camera_translation = Vec3(table.unpack( MatrixMul(rotationMatrixZXY, {{offset.gps:add(offset.head):unpack(0)}})[1] ) )
+            :add(gps)
+
+        -- Not using a translation matrix but instead just sending 'camera_translation' by itself (gps of the eye/camera)
+        -- translationMatrix_world[4] = {Vec3():sub(camera_translation):unpack(1)}
         ----------------------------------------
 
 
@@ -378,9 +388,9 @@ function onTick()
         end
 
         output.setNumber(13, cameraTransform_world[4][3])
-        output.setNumber(14, translate_world.x)
-        output.setNumber(15, translate_world.y)
-        output.setNumber(16, translate_world.z)
+        output.setNumber(14, camera_translation.x)
+        output.setNumber(15, camera_translation.y)
+        output.setNumber(16, camera_translation.z)
         --#endregion cameraTransform_world
 
 
@@ -392,17 +402,15 @@ function onTick()
                 laserDistance = laserDistance + 0.375
                 local dis = math.cos((laserTiltSensor)*tau)*laserDistance
 
-                -- Getting a vector with direction(tilt&compass) and length(laserDistance)
+                -- laserPos = (laser_vector + gps_offset + gps)
                 local laserPos = Vec3(
                     math.sin(-laserCompass*tau)*dis,
                     math.cos(-laserCompass*tau)*dis,
                     math.sin((laserTiltSensor)*tau)*laserDistance
                 )
-
-                -- laserPos = (Offset + GPS + laserPos)
-                laserPos = Vec3( table.unpack(  MatrixMul(rotationMatrixZXY, {{laserOFFSET:unpack(1)}})[1]  ) )
+                    :add(Vec3( table.unpack(  MatrixMul(rotationMatrixZXY, {{laserOFFSET:unpack(1)}})[1]  ) )) -- gps_Offset
                     :add(gps)
-                    :add(laserPos)
+
 
                 local point = {
                     laserPos.x,
@@ -413,7 +421,7 @@ function onTick()
                 -- Check the distance to the nearest saved point
                 local node, dist_squared = kdtree:nearestNeighbor(point)
 
-                if node == nil or dist_squared > minDist_squared - (node.point[3]-point[3])^2 then
+                if node == nil or dist_squared > math.max(minDist_squared - (node.point[3]-point[3])^2, 0.1) then
                     kdtree:insert(point)
 
                     laserOutput = point
