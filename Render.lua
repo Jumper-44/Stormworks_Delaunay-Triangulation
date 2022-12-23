@@ -97,7 +97,7 @@ Normalize = function(a) return Scale(a, 1/Len(a)) end
 
 
 --#region Rendering
-w, h =
+local w, h =
     property.getNumber("w"),
     property.getNumber("h")
 
@@ -109,9 +109,12 @@ local cx,cy, SCREEN_centerX, SCREEN_centerY, triangle_buffer_refreshrate, max_dr
     property.getNumber("MDT"),
     {}, 1, 0
 
+local triangle_buffer_scatter_amount = max_drawn_triangles + 500
 
 WorldToScreen = function(vertices, quadTree, cameraTransform, gps)
-    if frameCount % triangle_buffer_refreshrate == 0 then
+    local frameCountMod = frameCount % triangle_buffer_refreshrate == 0
+
+    if frameCountMod then
         triangle_buffer = {}
         quadTree.frustumCull(quadTree.tree, cameraTransform, gps)
 
@@ -165,7 +168,10 @@ WorldToScreen = function(vertices, quadTree, cameraTransform, gps)
 
         if v1 and v2 and v3 then -- if all vertices are within the near and far plane
             if v1.isIn or v2.isIn or v3.isIn then -- if atleast 1 visible vertex
-                if (v1.x*v2.y - v2.x*v1.y + v2.x*v3.y - v3.x*v2.y + v3.x*v1.y - v1.x*v3.y) > 0 then -- if the triangle is facing the camera, checks for CCW
+
+                -- Ternary operation to only test for backface culling once every triangle_buffer_refreshrate,
+                -- supposed to optimize so the math part is never executed when 'frameCountMod' is false
+                if frameCountMod and (v1.x*v2.y - v2.x*v1.y + v2.x*v3.y - v3.x*v2.y + v3.x*v1.y - v1.x*v3.y > 0) or true then -- if the triangle is facing the camera, checks for CCW
                     currentTriangle.v1=v1
                     currentTriangle.v2=v2
                     currentTriangle.v3=v3
@@ -263,13 +269,17 @@ QuadTree = function(centerX, centerY, size) return {
     -- Later the 'WorldToScreen' function will remove triangles in 'triangle_buffer' which are not visible in frustum.
     -- https://web.archive.org/web/20030810032130/http://www.markmorley.com:80/opengl/frustumculling.html
     frustumCull = function(startRoot, cameraTransform, gps)
-        local check_queue, full_in_view_queue, z, table_remove, addToTraversalQueue = {startRoot}, {}, {}, table.remove,
+        local check_queue, full_in_view_queue, z, below_certain_alt, table_remove, math_abs, addToTraversalQueue =
+            {startRoot},
+            {}, {},
+            gps.z<350,
+            table.remove, math.abs,
             function(root, traversalQueue)
                 -- If the distance from the camera to the center of a quad node is greater than 300^2 m
                 -- and triangle_buffer is greater than the max_drawn_triangles amount then it will only add every second triangle of a quad node to the triangle_buffer,
                 -- which is to get better performance while still able to slightly see in the distance when the amount triangles in view are high.
                 local x, y = root.centerX-gps.x, root.centerY-gps.y
-                for i = 1, #root, (x*x+y*y<9E4 or #triangle_buffer<max_drawn_triangles) and 1 or 2 do
+                for i = 1, #root, (x*x+y*y<9E4 or #triangle_buffer<triangle_buffer_scatter_amount) and 1 or 2 do
                     triangle_buffer[#triangle_buffer+1] = root[i]
                 end
 
@@ -290,7 +300,7 @@ QuadTree = function(centerX, centerY, size) return {
             local x, y, rootSize = root.centerX, root.centerY, root.size*2
 
             -- If the camera is within the boundary of the quad XY then just add it as partially inside, else frustum check each corner of the quad node
-            if math.abs(x-gps.x)<rootSize and math.abs(y-gps.y)<rootSize and gps.z<350 then
+            if below_certain_alt and math_abs(x-gps.x)<rootSize and math_abs(y-gps.y)<rootSize then
                 addToTraversalQueue(root, check_queue)
             else
                 local quadCorners, points_in_frustum, fully_inside, partially_inside = {
