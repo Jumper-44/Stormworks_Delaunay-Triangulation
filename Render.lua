@@ -481,8 +481,8 @@ function onDraw()
 
         -- [[ debug
         setColor(255,255,255,125)
-        screen.drawText(0,140, "A "..alpha)
-        screen.drawText(0,150, "Tri "..#triangle_buffer.."/"..triangle_buffer_len_debug)
+        screen.drawText(0,h-20, "A "..alpha)
+        screen.drawText(0,h-10, "Tri "..#triangle_buffer.."/"..triangle_buffer_len_debug)
         -- ]]
     end
 end
