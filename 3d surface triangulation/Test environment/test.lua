@@ -1,6 +1,6 @@
--- Author: <Authorname> (Please change this in user settings, Ctrl+Comma)
--- GitHub: <GithubLink>
--- Workshop: <WorkshopLink>
+-- Author: Jumper
+-- GitHub: https://github.com/Jumper-44
+-- Workshop: https://steamcommunity.com/profiles/76561198084249280/myworkshopfiles/
 --
 --- Developed using LifeBoatAPI - Stormworks Lua plugin for VSCode - https://code.visualstudio.com/download (search "Stormworks Lua with LifeboatAPI" extension)
 --- If you have any issues, please report them here: https://github.com/nameouschangey/STORMWORKS_VSCodeExtension/issues - by Nameous Changey
@@ -17,7 +17,7 @@
 do
     ---@type Simulator -- Set properties and screen sizes here - will run once when the script is loaded
     simulator = simulator
-    simulator:setScreen(1, "3x3")
+    simulator:setScreen(1, "10x10")
     simulator:setProperty("ExampleNumberProperty", 123)
 
     -- Runs every tick just before onTick; allows you to simulate the inputs changing
@@ -46,8 +46,7 @@ end
 
 --[====[ IN-GAME CODE ]====]
 
--- try require("Folder.Filename") to include code from another file in this, so you can store code in libraries
--- the "LifeBoatAPI" is included by default in /_build/libs/ - you can use require("LifeBoatAPI") to get this, and use all the LifeBoatAPI.<functions>!
+
 
 ticks = 0
 function onTick()
