@@ -60,7 +60,7 @@ local KDTree = function()
 
         ---@section KDTree_nearestNeighbor
         ---Returns the nearest point in k-d tree to param point
-        ---Will NOT set a value to point.len2 if node is traversed
+        ---Will NOT set a value to root.point.len2
         ---@param point table
         ---@return table
         KDTree_nearestNeighbor = function(point)
@@ -90,7 +90,7 @@ local KDTree = function()
 
         ---@section KDTree_nearestNeighbors
         ---Returns the nearest point(s) in k-d tree to param point up to param maxNeighbors
-        ---Will set a value to point.len2 if node is traversed
+        ---Will set a value to root.point.len2 if node is traversed
         ---@param point table
         ---@param maxNeighbors integer
         ---@return table
@@ -129,7 +129,7 @@ local KDTree = function()
 
         ---@section KDTree_rangeSearch
         ---Returns all the point(s) in k-d tree that are within the param searchRadius_squared of param point
-        ---Will set a value to point.len2 if node is traversed
+        ---Will set a value to root.point.len2 if in_range
         ---@param point table
         ---@param searchRadius_squared number
         ---@return table
