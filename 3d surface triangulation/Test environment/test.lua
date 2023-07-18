@@ -20,12 +20,12 @@ do
     simulator:setScreen(1, "16x16")
     simulator:setProperty("w", 16*32)
     simulator:setProperty("h", 16*32)
-    simulator:setProperty("near", 0.25)
-    simulator:setProperty("renderDistance", 1000)
-    simulator:setProperty("sizeX", 0.7) --* 1.8)
-    simulator:setProperty("sizeY", 0.7)
+    simulator:setProperty("near", 0.1)
+    simulator:setProperty("renderDistance", 2000)
+    simulator:setProperty("sizeX", 1) --* 1.8)
+    simulator:setProperty("sizeY", 1)
     simulator:setProperty("positionOffsetX", 0)
-    simulator:setProperty("positionOffsetY", 0.01)
+    simulator:setProperty("positionOffsetY", 0)
 
     simulator:setProperty("pxOffsetX", 0)
     simulator:setProperty("pxOffsetY", 0)
@@ -47,12 +47,12 @@ do
         simulator:setInputNumber(4, screenConnection.touchY)
         --]]
 
-        simulator:setInputNumber(1, (simulator:getSlider(1) - 0) * 10)
-        simulator:setInputNumber(2, (simulator:getSlider(2) - 0) * 10)
-        simulator:setInputNumber(3, (simulator:getSlider(3) - 0.5) * 25)
-        simulator:setInputNumber(4, (simulator:getSlider(4)) * math.pi*2)
-        simulator:setInputNumber(5, (simulator:getSlider(5)) * math.pi*2)
-        simulator:setInputNumber(6, (simulator:getSlider(6)) * math.pi*2)
+        simulator:setInputNumber(1, (simulator:getSlider(1) - 0) * 50)
+        simulator:setInputNumber(2, (simulator:getSlider(2) - 0) * 50)
+        simulator:setInputNumber(3, (simulator:getSlider(3) - 0.2) * 100)
+        simulator:setInputNumber(4, (simulator:getSlider(4)) * math.pi)
+        simulator:setInputNumber(5, (simulator:getSlider(5)) * math.pi)
+        simulator:setInputNumber(6, (simulator:getSlider(6)) * math.pi)
         simulator:setInputNumber(7, simulator:getSlider(7))
         simulator:setInputNumber(8, simulator:getSlider(8))
 
@@ -282,6 +282,27 @@ end
 --#endregion Render Function(s)
 
 
+
+
+local POINTS_TO_PROCESS = {}
+local xn, zn = 50, 50
+for i = 1, xn do
+    for j = 1, zn do
+        local id = #POINTS_TO_PROCESS+1
+        local x, z = i + (math.random()-.5)*.2 -xn/2, j + (math.random()-.5)*.5 -zn/2
+        local ang = Vec3(0, math.pi/2, (x+z)/(xn+zn)*math.pi*2)
+        local function fun() return math.sin(x) + math.cos(z) - 5 end
+
+        local rot = getRotationMatrixZYX(ang)
+        local p = Vec3(x, fun(), z)
+
+        POINTS_TO_PROCESS[id] = {MatMul3xVec3(rot, p):unpack(id)}
+    end
+end
+
+
+
+
 function onTick()
     isRendering = input.getBool(1)
     output.setBool(1, isRendering)
@@ -347,203 +368,31 @@ function onTick()
         --output.setNumber(14, cameraTranslation.x)
         --output.setNumber(15, cameraTranslation.y)
         --output.setNumber(16, cameraTranslation.z)
+
+        ---------------------------------------------------------------------------------------------------------------
+
+
     end
 
 end
+
+-- linearize depth[0;1]
+-- zNear * zFar / (zFar + d * (zNear - zFar))
+local n_mul_f = SCREEN.near*SCREEN.far
+local n_sub_f = SCREEN.near-SCREEN.far
 
 function onDraw()
     if isRendering then
+        local points_buffer = WorldToScreen_points(POINTS_TO_PROCESS)
 
+        screen.setColor(255, 255, 0, 200)
+        for i = 1, #points_buffer do
+            local d = n_mul_f/(SCREEN.far + points_buffer[i][3]*n_sub_f)
+            screen.drawCircleF(points_buffer[i][1], points_buffer[i][2], Clamp(10/d, 0.6, 10))
+        end
+
+        screen.setColor(255,0,0)
+        screen.drawText(0,00, "in view: "..#points_buffer)
     end
 end
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
----@section __RENDER_DEBUG__
---[[ debug in VSCode for drawing points with WorldToScreen_points()
-do
-    local data = {}
-    local rand = math.random
-    for i = 1, 1E3 do
-        data[i] = {(rand()-0.5)*50, (rand()-0.5)*50, (rand())*100}
-    end
-
-    -- linearize depth[0;1]
-    -- zNear * zFar / (zFar + d * (zNear - zFar))
-    local n,f = 0.25, 1000
-    local n_mul_f = n*f
-    local n_sub_f = n-f
-    local t1,t2 = 0,0
-
-    function onDraw()
-        t1 = os.clock()
-
-        if isRendering then
-            local points_buffer = WorldToScreen_points(data)
-
-            for i = 1, #points_buffer do
-                local d = n_mul_f/(f + points_buffer[i][3]*n_sub_f)
-
-                screen.setColor(d, 255-d, 0, 200)
-                screen.drawCircleF(points_buffer[i][1], points_buffer[i][2], 0.6)
-            end
-
-            screen.setColor(255,0,0)
-            screen.drawText(0,00, "in view: "..#points_buffer)
-        end
-
-        t2 = os.clock()
-        screen.drawText(0,10, string.format("Elapsed time (sec): %.3f", t2-t1))
-    end
-end
---]]
-
--- [[ debug in VSCode for drawing traingles with WorldToScreen_triangles()
-do
-
-    --#region local unit cube data
-    local unitCubePoints = {
-        {-0.5, -0.5, -0.5},
-        { 0.5, -0.5, -0.5},
-        { 0.5,  0.5, -0.5},
-        {-0.5,  0.5, -0.5},
-        {-0.5, -0.5,  0.5},
-        { 0.5, -0.5,  0.5},
-        { 0.5,  0.5,  0.5},
-        {-0.5,  0.5,  0.5}
-    }
-
-    local cubeTriangleOrder = { -- CW wounding order
-        {1, 2, 3}, -- Back face -z
-        {1, 3, 4},
-        {5, 7, 6}, -- Front face +z
-        {5, 8, 7},
-        {1, 5, 6}, -- Bottom face -y
-        {1, 6, 2},
-        {4, 3, 7}, -- Top face +y
-        {4, 7, 8},
-        {1, 4, 8}, -- Left face -x
-        {1, 8, 5},
-        {2, 6, 7}, -- Right face +x
-        {2, 7, 3}
-    }
-
-    local cubeColors = {
-        {255, 255, 0}, -- Back face -z (Yellow)
-        {255, 255, 0},
-        {0, 255, 0}, -- Front face +z (Green)
-        {0, 255, 0},
-        {0, 255, 255}, -- Bottom face -y (Cyan)
-        {0, 255, 255},
-        {0, 0, 255}, -- Top face +y (Blue)
-        {0, 0, 255},
-        {255, 0, 255}, -- Left face -x (Magenta)
-        {255, 0, 255},
-        {255, 0, 0}, -- Right face +x (Red)
-        {255, 0, 0}
-    }
-    --#endregion local unit cube data
-
-    local MakeCube = function(triangle_buffer, translation, angle, size, id_offset)
-        local sx,sy,sz, cx,cy,cz = math.sin(angle[1]),math.sin(angle[2]),math.sin(angle[3]), math.cos(angle[1]),math.cos(angle[2]),math.cos(angle[3])
-        local rotXYZ = { -- http://www.songho.ca/opengl/gl_anglestoaxes.html
-            {cy*cz,     sx*sy*cz+cx*sz,     -cx*sy*cz+sx*sz },
-            {-cy*sz,    -sx*sy*sz+cx*cz,    cx*sy*sz+sx*cz  },
-            {sy,        -sx*cy,             cx*cy           }
-        }
-
-        -- Get vertices of rotated unitCube
-        local vertices = MatrixMultiplication(rotXYZ, unitCubePoints)
-
-        for i = 1, 8 do
-            -- set vertex id
-            vertices[i][4] = i + id_offset*8
-
-            for j = 1, 3 do
-                -- Scale rotated unitCube by 'size' and add translation
-                vertices[i][j] = vertices[i][j]*size + translation[j]
-            end
-        end
-
-        -- Make triangle_buffer
-        for i = 1, 12 do
-            triangle_buffer[i + id_offset*12] = {
-                vertices[ cubeTriangleOrder[i][2] ], -- Swap these 2 to change wounding order of CCW and CW
-                vertices[ cubeTriangleOrder[i][1] ], -- 
-                vertices[ cubeTriangleOrder[i][3] ],
-                cubeColors[i]
-            }
-        end
-
-        return triangle_buffer
-    end
-
-
-    local cubesAmount = 200
-    local cubesPos = {}
-    local cubesSize = {}
-    local cubesAng = {}
-
-    local rand = math.random
-    for i = 1, cubesAmount do
-        cubesPos[i] = {(rand()-0.5)*150, (rand()-0.5)*150, rand()*150}
-        cubesSize[i] = rand()*7+1
-        cubesAng[i] = {ang = {0, 0, 0}, deltaChange = {(rand()-0.5)*0.1, (rand()-0.5)*0.1, (rand()-0.5)*0.1}}
-    end
-
-    local t1,t2 = 0,0
-    local changingSize = 0.1
-
-    function onDraw()
-        t1 = os.clock()
-
-        if isRendering then
-            local triangle_buffer = {}
-
-            changingSize = changingSize + 0.05
-            MakeCube(triangle_buffer, {3, 3, 30}, {0, 0, 0}, math.sin(changingSize)*4, 0)
-
-            for i = 1, cubesAmount do
-                for j = 1, 3 do
-                    cubesAng[i].ang[j] = cubesAng[i].ang[j] + cubesAng[i].deltaChange[j]
-                end
-                MakeCube(triangle_buffer, cubesPos[i], cubesAng[i].ang, cubesSize[i], i)
-            end
-
-            WorldToScreen_triangles(triangle_buffer, true)
-
-            for i = 1, #triangle_buffer do
-                local tri = triangle_buffer[i][5]
-
-                if tri then
-                    local color = triangle_buffer[i][4]
-                    screen.setColor(color[1], color[2], color[3], 200)
-                    screen.drawTriangleF(tri[1][1], tri[1][2], tri[2][1], tri[2][2], tri[3][1], tri[3][2])
-                end
-            end
-
-            screen.setColor(255,255,255)
-            screen.drawText(0,0, "#Tri_Buffer: "..#triangle_buffer)
-        end
-
-        t2 = os.clock()
-        screen.setColor(255, 255, 255)
-        screen.drawText(0,10, string.format("Elapsed time (sec): %.3f", t2-t1))
-    end
-end
---]]
----@endsection
