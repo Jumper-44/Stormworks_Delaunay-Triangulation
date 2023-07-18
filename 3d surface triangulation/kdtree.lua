@@ -2,7 +2,7 @@
 ---@section KDTree 1 _KDTREE_
 -- k-d tree is 3 dimentions only.
 ---@return table
-local KDTree = function()
+KDTree = function()
     ---Returns the squared magnitude/length between two points
     ---@param pointA table
     ---@param pointB table
