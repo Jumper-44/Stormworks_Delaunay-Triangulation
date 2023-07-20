@@ -1,15 +1,15 @@
 ---@class KDTree
 ---@section KDTree 1 _KDTREE_
----k-d tree is 3 dimentions only.
+---@param k_dimensions interger
 ---@return table
-KDTree = function()
+KDTree = function(k_dimensions)
     ---Returns the squared magnitude/length between two points
     ---@param pointA table
     ---@param pointB table
     ---@return number
     local len2 = function(pointA, pointB)
         local sum = 0
-        for i = 1, 3 do
+        for i = 1, k_dimensions do
             local dis = pointA[i] - pointB[i]
             sum = sum + dis*dis
         end
@@ -44,7 +44,7 @@ KDTree = function()
                 if root.point then
                     return insertRecursive(
                         point[cd] < root.point[cd] and root.left or root.right,
-                        depth % 3 + 1,
+                        depth % k_dimensions + 1,
                         depth + 1
                     )
                 else -- Create node if point is nil
@@ -67,7 +67,7 @@ KDTree = function()
             local function nearestNeighborRecursive(root, depth)
                 if root.point == nil then return nil end
 
-                local cd, nextBranch, ortherBranch = depth % 3 + 1, root.right, root.left
+                local cd, nextBranch, ortherBranch = depth % k_dimensions + 1, root.right, root.left
                 if point[cd] < root.point[cd] then
                     nextBranch, ortherBranch = root.left, root.right
                 end
@@ -99,7 +99,7 @@ KDTree = function()
             local function nearestNeighborsRecursive(root, depth)
                 if root.point == nil then return nil end
 
-                local cd, rootPoint, nextBranch, ortherBranch = depth % 3 + 1, root.point, root.right, root.left
+                local cd, rootPoint, nextBranch, ortherBranch = depth % k_dimensions + 1, root.point, root.right, root.left
                 if point[cd] < rootPoint[cd] then
                     nextBranch, ortherBranch = root.left, root.right
                 end
@@ -138,7 +138,7 @@ KDTree = function()
             local function rangeSearchRecursive(root, depth)
                 if root.point == nil then return nil end
 
-                local cd, rootPoint, nextBranch, ortherBranch = depth % 3 + 1, root.point, root.right, root.left
+                local cd, rootPoint, nextBranch, ortherBranch = depth % k_dimensions + 1, root.point, root.right, root.left
                 if point[cd] < rootPoint[cd] then
                     nextBranch, ortherBranch = root.left, root.right
                 end
@@ -170,7 +170,7 @@ end
 --[[
 do
     local points = {}
-    local t = KDTree()
+    local t = KDTree(3)
 
     for i = 1, 10000 do
         points[i] = {(math.random()-.5)*400, (math.random()-.5)*400, (math.random()-.5)*400}
