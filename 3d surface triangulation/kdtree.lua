@@ -59,10 +59,10 @@ KDTree = function(k_dimensions)
         ---@endsection
 
         ---@section KDTree_nearestNeighbor
-        ---Returns the nearest point in k-d tree to param point
+        ---Returns the nearest point in k-d tree to param point or nil if tree is empty
         ---Will NOT set a value to root.point.len2
         ---@param point table
-        ---@return table
+        ---@return table|nil
         KDTree_nearestNeighbor = function(point)
             local function nearestNeighborRecursive(root, depth)
                 if root.point == nil then return nil end
@@ -84,7 +84,8 @@ KDTree = function(k_dimensions)
                 return best
             end
 
-            return nearestNeighborRecursive(tree_root, 0).point
+            local return_val = nearestNeighborRecursive(tree_root, 0)
+            return return_val and return_val.point or return_val
         end;
         ---@endsection
 
