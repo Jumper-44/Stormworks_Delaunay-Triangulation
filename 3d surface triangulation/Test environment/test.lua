@@ -257,7 +257,7 @@ local WorldToScreen_triangles = function(triangle_buffer, isRemovingOutOfViewTri
         if
             v1 and v2 and v3                                                                            -- Are all vertices within near and far plane
             and (v1[4] or v2[4] or v3[4])                                                               -- and atleast 1 visible in frustum
-            and (v1[1]*v2[2] - v2[1]*v1[2] + v2[1]*v3[2] - v3[1]*v2[2] + v3[1]*v1[2] - v1[1]*v3[2] > 0) -- and is the triangle facing the camera (backface culling CCW. Flip '>' for CW. Can be removed if triangles aren't consistently ordered CCW/CW)
+            --and (v1[1]*v2[2] - v2[1]*v1[2] + v2[1]*v3[2] - v3[1]*v2[2] + v3[1]*v1[2] - v1[1]*v3[2] > 0) -- and is the triangle facing the camera (backface culling CCW. Flip '>' for CW. Can be removed if triangles aren't consistently ordered CCW/CW)
         then
             currentTriangle[5] = {
                 v1,
@@ -301,11 +301,42 @@ for i = 1, xn do
 end
 
 
+require("3d surface triangulation.3d triangulation")
+local triangulationManager = SurfaceTriangulation()
+local triangle_buffer = {}
 
+--[[
+for i = 1, #POINTS_TO_PROCESS do
+    triangulationManager.insert(POINTS_TO_PROCESS[i])
+end
+for i = 1, #triangulationManager.triangle_action_queue do
+    triangle_buffer[#triangle_buffer+1] = {triangulationManager.triangle_action_queue[i][1][1], triangulationManager.triangle_action_queue[i][1][2], triangulationManager.triangle_action_queue[i][1][3], {200, 200, 200}}
+end
+--]]
+
+local tick = 1
+local last_triangle_action_queue_length = 0
 
 function onTick()
     isRendering = input.getBool(1)
     output.setBool(1, isRendering)
+
+    -- [[
+    for t = 1, 25 do
+        if tick <= #POINTS_TO_PROCESS then
+            triangulationManager.insert(POINTS_TO_PROCESS[tick])
+            tick = tick + 1
+        end
+    end
+    local triangle_action_queue_len = #triangulationManager.triangle_action_queue
+    if last_triangle_action_queue_length < triangle_action_queue_len then
+        for i = 1, #triangulationManager.triangle_action_queue-last_triangle_action_queue_length do
+            triangle_buffer[#triangle_buffer+1] = {triangulationManager.triangle_action_queue[i][1][1], triangulationManager.triangle_action_queue[i][1][2], triangulationManager.triangle_action_queue[i][1][3], {200, 200, 200}}
+        end
+
+        last_triangle_action_queue_length = triangle_action_queue_len
+    end
+    --]]
 
     if isRendering then
         isFemale = input.getBool(2)
@@ -389,6 +420,19 @@ function onDraw()
         for i = 1, #points_buffer do
             local d = n_mul_f/(SCREEN.far + points_buffer[i][3]*n_sub_f)
             screen.drawCircleF(points_buffer[i][1], points_buffer[i][2], Clamp(10/d, 0.6, 10))
+        end
+
+        WorldToScreen_triangles(triangle_buffer, false)
+        for i = 1, #triangle_buffer do
+            local tri = triangle_buffer[i][5]
+
+            if tri then
+                local color = triangle_buffer[i][4]
+                screen.setColor(color[1], color[2], color[3], 200)
+                screen.drawTriangleF(tri[1][1], tri[1][2], tri[2][1], tri[2][2], tri[3][1], tri[3][2])
+                screen.setColor(10, 10, 10, 255)
+                screen.drawTriangle(tri[1][1], tri[1][2], tri[2][1], tri[2][2], tri[3][1], tri[3][2])
+            end
         end
 
         screen.setColor(255,0,0)
