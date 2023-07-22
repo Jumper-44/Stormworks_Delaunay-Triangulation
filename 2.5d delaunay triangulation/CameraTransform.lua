@@ -273,8 +273,6 @@ offset.gps = Vec3(  -- X:+Right, Y:+Foward, Z:+Up. Offset GPS to the block of th
 offset.tick = property.getNumber("tick") --It takes a few ticks from getting the newest data to presenting it, so predicting the future position by a few ticks helps with Vehicle GPS & Rotation.
 
 local f = property.getNumber("renderDistance")
-
-local aspectRatio=w/h
 ------------------------------------
 --#endregion Screen Configuration
 
@@ -345,7 +343,7 @@ function onTick()
 
             --Right hand rule and looking down the +Y axis, +X is right and +Z is up. Projects to x|y:coordinates [-1;1], z:depth [0;1], w:homogeneous coordinate
             perspectiveProjectionMatrix = {
-                {2*n/(r-l)*aspectRatio,     0,              0,              0},
+                {2*n/(r-l),                 0,              0,              0},
                 {-(r+l)/(r-l),              -(b+t)/(b-t),   f/(f-n),        1},
                 {0,                         2*n/(b-t),      0,              0},
                 {0,                         0,              -f*n/(f-n),     0}
