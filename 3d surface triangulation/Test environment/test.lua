@@ -21,7 +21,7 @@ do
     simulator:setProperty("w", 16*32)
     simulator:setProperty("h", 16*32)
     simulator:setProperty("near", 0.1)
-    simulator:setProperty("renderDistance", 2000)
+    simulator:setProperty("renderDistance", 10000)
     simulator:setProperty("sizeX", 1) --* 1.8)
     simulator:setProperty("sizeY", 1)
     simulator:setProperty("positionOffsetX", 0)
@@ -281,8 +281,13 @@ local WorldToScreen_triangles = function(triangle_buffer, isRemovingOutOfViewTri
 end
 --#endregion Render Function(s)
 
-
-
+-- https://stackoverflow.com/questions/35572435/how-do-you-do-the-fisher-yates-shuffle-in-lua
+local function ShuffleInPlace(t)
+    for i = #t, 2, -1 do
+        local j = math.random(i)
+        t[i], t[j] = t[j], t[i]
+    end
+end
 
 local POINTS_TO_PROCESS = {}
 local xn, zn = 50, 50
@@ -296,26 +301,19 @@ for i = 1, xn do
         local rot = getRotationMatrixZYX(ang)
         local p = Vec3(x, fun(), z)
 
-        POINTS_TO_PROCESS[id] = {MatMul3xVec3(rot, p):unpack(id)}
+        POINTS_TO_PROCESS[id] = {MatMul3xVec3(rot, p):unpack()}
     end
 end
+
+ShuffleInPlace(POINTS_TO_PROCESS)
+for i = 1, #POINTS_TO_PROCESS do POINTS_TO_PROCESS[i][4] = i end
 
 
 require("3d surface triangulation.3d triangulation")
 local triangulationManager = SurfaceTriangulation()
 local triangle_buffer = {}
 
---[[
-for i = 1, #POINTS_TO_PROCESS do
-    triangulationManager.insert(POINTS_TO_PROCESS[i])
-end
-for i = 1, #triangulationManager.triangle_action_queue do
-    triangle_buffer[#triangle_buffer+1] = {triangulationManager.triangle_action_queue[i][1][1], triangulationManager.triangle_action_queue[i][1][2], triangulationManager.triangle_action_queue[i][1][3], {200, 200, 200}}
-end
---]]
-
 local tick = 1
-local last_triangle_action_queue_length = 0
 
 function onTick()
     isRendering = input.getBool(1)
@@ -328,14 +326,12 @@ function onTick()
             tick = tick + 1
         end
     end
-    local triangle_action_queue_len = #triangulationManager.triangle_action_queue
-    if last_triangle_action_queue_length < triangle_action_queue_len then
-        for i = 1, #triangulationManager.triangle_action_queue-last_triangle_action_queue_length do
-            triangle_buffer[#triangle_buffer+1] = {triangulationManager.triangle_action_queue[i][1][1], triangulationManager.triangle_action_queue[i][1][2], triangulationManager.triangle_action_queue[i][1][3], {200, 200, 200}}
+    repeat
+        local value = triangulationManager.triangle_action_queue:popright()
+        if value ~= nil then
+            triangle_buffer[#triangle_buffer+1] = {value[1][1], value[1][2], value[1][3], {200, 200, 200}}
         end
-
-        last_triangle_action_queue_length = triangle_action_queue_len
-    end
+    until not value
     --]]
 
     if isRendering then

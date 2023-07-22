@@ -69,17 +69,24 @@ SurfaceTriangulation = function()
             neighborTriangle_a, neighborTriangle_b, neighborTriangle_c,
             GetCircumCircle(pointA, pointB, pointC), false
         }
-
     end
 
     local kdtree = KDTree(3)
-    local triangle_action_queue = {
-        ---comment
-        ---@param self table
-        ---@param triangle table
-        ---@param add_or_rem boolean
-        insert = function(self, triangle, add_or_rem)
-            table.insert(self, 1, {triangle, add_or_rem})
+    local triangle_action_queue = { -- https://www.lua.org/pil/11.4.html
+        first = 0; last = -1;
+
+        pushleft = function(self, triangle, add_or_rem)
+            local first = self.first - 1
+            self.first = first
+            self[first] = {triangle, add_or_rem}
+        end;
+        popright = function(self)
+            local last = self.last
+            if self.first > last then return nil end
+            local value = self[last]
+            self[last] = nil         -- to allow garbage collection
+            self.last = last - 1
+            return value
         end
     }
     local point_minimum_neighboring_len2 = 1^2
@@ -101,12 +108,12 @@ SurfaceTriangulation = function()
                 point.triangles = {}
                 kdtree.KDTree_insert(point)
 
-                if #neighbors >= 2 and #neighbors[1].triangles == 0 and #neighbors[2].triangles == 0 then
+                if #neighbors >= 2 then -- and #neighbors[1].triangles == 0 and #neighbors[2].triangles == 0 then
                     local new_triangle = NewTriangle(point, neighbors[1], neighbors[2], false, false, false)
                     point.triangles[1] = new_triangle
                     neighbors[1].triangles[1] = new_triangle
                     neighbors[2].triangles[1] = new_triangle
-                    triangle_action_queue:insert(new_triangle, true)
+                    triangle_action_queue:pushleft(new_triangle, true)
                 end
 
                 
