@@ -286,13 +286,20 @@ IKDTree = function(k_dimensions)
             local function insertRecursive(root, cd, depth)
                 if root.leaf then
                     root[#root+1] = point
-                    if #root == 4 then
+                    if #root == 16 then -- Split node when it contains 16 points
                         table.sort(root, function(a, b) return a[cd] < b[cd] end)
                         root.leaf = false
-                        root.split = 0.5 * (root[2][cd] + root[3][cd])
-                        root.left = {root[1], root[2], leaf = true}
-                        root.right = {root[3], root[4], leaf = true}
-                        for i = 1, 4 do root[i] = nil end
+                        root.split = 0.5 * (root[8][cd] + root[9][cd])
+                        root.left = {leaf = true}
+                        root.right = {leaf = true}
+                        for i = 1, 8 do
+                            root.left[i] = root[i]
+                            root[i] = nil
+                        end
+                        for i = 9, 16 do
+                            root.right[i - 8] = root[i]
+                            root[i] = nil
+                        end
                     end
                 else
                     return insertRecursive(
@@ -334,7 +341,7 @@ IKDTree = function(k_dimensions)
 
         ---@section IKDTree_nearestNeighbors
         ---Returns the nearest point(s) in k-d tree to param point up to param maxNeighbors
-        ---Will set a value to root.point.len2 if node is traversed
+        ---Will set a value to root[i].len2 if node is traversed
         ---@param point table
         ---@param maxNeighbors integer
         ---@return table
@@ -360,7 +367,7 @@ IKDTree = function(k_dimensions)
                         if #nearestPoints < maxNeighbors then
                             nearestPoints:insert(root[i])
                         else
-                            if root[i].len2 < nearestPoints[#nearestPoints].len2 then
+                            if root[i].len2 < nearestPoints[maxNeighbors].len2 then
                                 nearestPoints[maxNeighbors] = nil
                                 nearestPoints:insert(root[i])
                             end
@@ -373,7 +380,7 @@ IKDTree = function(k_dimensions)
 
                     nearestNeighborsRecursive(nextBranch, depth+1)
                     local dist = point[cd] - root.split
-                    if #nearestPoints < maxNeighbors or len2(point, nearestPoints[maxNeighbors]) >= dist*dist then
+                    if #nearestPoints < maxNeighbors or nearestPoints[maxNeighbors].len2 >= dist*dist then
                         nearestNeighborsRecursive(ortherBranch, depth+1)
                     end
                 end
@@ -393,21 +400,30 @@ end
 do
     local points = {}
     local t = IKDTree(3)
+    local t1, t2
+    local rand = math.random
+    math.randomseed(123)
 
-    for i = 1, 10000 do
-        points[i] = {(math.random()-.5)*400, (math.random()-.5)*400, (math.random()-.5)*400}
+    for i = 1, 1000000 do
+        points[i] = {(rand()-.5)*100, (rand()-.5)*100, (rand()-.5)*100}
         t.IKDTree_insert(points[i])
     end
 
-    for i = 1000, 10000 do
+    for i = 500000, 1000000 do
         t.IKDTree_remove(points[i])
         points[i] = nil
     end
 
-    local p = {25,-25,25}
 
-    do -- nearest neighbor
-        local tree_n = t.IKDTree_nearestNeighbors(p, 1)
+    print("--- nearest neighbor ---")
+    local time = {}
+    for k = 1, 10 do -- nearest neighbor
+        local p = {(rand()-.5)*100, (rand()-.5)*100, (rand()-.5)*100}
+
+        t1 = os.clock()
+        local tree_n = t.IKDTree_nearestNeighbors(p, 100)
+        t2 = os.clock()
+
         local best, brute_n = 0x7fffffffffffffff, nil
         for i = 1, #points do
             if t.len2(p, points[i]) < best then
@@ -416,19 +432,26 @@ do
             end
         end
 
-        print("--- nearest neighbor ---")
-        print("tree: "..t.len2(p, tree_n[1]))
-        print("brute: "..best)
-        print("is equal: "..tostring(tree_n[1]==brute_n))
+        time[k] = t2-t1
+        print("tree: "..t.len2(p, tree_n[1])..", brute: "..best..", is equal: "..tostring(tree_n[1]==brute_n)..", time: "..time[k])
     end
 
-    do -- nearest neighbors
-        print("--- nearest neighbors ---")
-        local tree_n = t.IKDTree_nearestNeighbors(p, 5)
-        for i = 1, #tree_n do
-            print(tree_n[i].len2)
-        end
+    local avg = 0
+    for k = 1, #time do
+        avg = avg + time[k]/#time
     end
+    print("iterations: "..#time..", avg: "..avg)
+
+--  do -- nearest neighbors
+--      local p = {(rand()-.5)*500, (rand()-.5)*500, (rand()-.5)*500}
+--      print("--- nearest neighbors ---")
+--      local tree_n = t.IKDTree_nearestNeighbors(p, 5)
+--      for i = 1, #tree_n do
+--          print(tree_n[i].len2)
+--      end
+--  end
 end
+
+
 --]]
 ---@endsection
