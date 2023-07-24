@@ -1,3 +1,11 @@
+-- *ReadMe*
+--
+-- There are two functions for k-d tree here: KDTree() and IKDTree()
+-- Initially made KDTree(), in which points are in the internal nodes and only has insertion and nearestNeighbor(s) and rangeSearch functions.
+-- Then I made IKDTree() for Incremental-KDTree, which only has points in leaf nodes and will buffer points in leaf before splitting. Has insert, remove and nearestNeighbor(s) functions.
+-- I recommend to use IKDTree(), even if you don't need to remove from the tree, then it should hopefully still be more balanced, due to buffering up before splitting.
+
+
 ---@class KDTree
 ---@section KDTree 1 _KDTREE_
 ---@param k_dimensions interger
@@ -318,11 +326,11 @@ IKDTree = function(k_dimensions)
         ---@endsection
 
         ---@section IKDTree_remove
-        ---Finds leaf containing point (assumed it is in tree) and removes it from leaf
+        ---Finds leaf containing point (assumed to be the same table and not contents/coordinates of point) and removes it from leaf
         ---@param point table
         IKDTree_remove = function(point)
             local function removeRecursive(root, cd, depth)
-                -- Could try to slightly balance tree if removing last or second last point in leaf
+                -- Could try to slightly balance tree if removing last or very few points in leaf
                 if root.leaf then
                     for i = 1, #root do
                         if point == root[i] then
