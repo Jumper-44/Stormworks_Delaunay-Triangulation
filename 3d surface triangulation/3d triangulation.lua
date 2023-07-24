@@ -71,7 +71,7 @@ SurfaceTriangulation = function()
         }
     end
 
-    local kdtree = KDTree(3)
+    local kdtree = IKDTree(3)
     local triangle_action_queue = { -- https://www.lua.org/pil/11.4.html
         first = 0; last = -1;
 
@@ -89,7 +89,7 @@ SurfaceTriangulation = function()
             return value
         end
     }
-    local point_minimum_neighboring_len2 = 1^2
+    local point_minimum_neighboring_len2 = 0.25^2
     local point_maximum_neighboring_len2 = 10^2
 
 
@@ -100,13 +100,13 @@ SurfaceTriangulation = function()
         ---@param point table
         ---@return boolean
         insert = function(point)
-            local neighbors = kdtree.KDTree_nearestNeighbors(point, 3)
+            local neighbors = kdtree.IKDTree_nearestNeighbors(point, 5)
 
             -- If no neighboring point exist then add point to k-d tree
             -- If neighboring point exist then test len2 to nearest point and add if greater than point_minimum_neighboring_len2.
             if not neighbors[1] or neighbors[1].len2 > point_minimum_neighboring_len2 then
                 point.triangles = {}
-                kdtree.KDTree_insert(point)
+                kdtree.IKDTree_insert(point)
 
                 if #neighbors >= 2 then -- and #neighbors[1].triangles == 0 and #neighbors[2].triangles == 0 then
                     local new_triangle = NewTriangle(point, neighbors[1], neighbors[2], false, false, false)

@@ -305,7 +305,7 @@ for i = 1, xn do
     end
 end
 
-ShuffleInPlace(POINTS_TO_PROCESS)
+--ShuffleInPlace(POINTS_TO_PROCESS)
 for i = 1, #POINTS_TO_PROCESS do POINTS_TO_PROCESS[i][4] = i end
 
 
@@ -320,7 +320,7 @@ function onTick()
     output.setBool(1, isRendering)
 
     -- [[
-    for t = 1, 25 do
+    for t = 1, 50 do
         if tick <= #POINTS_TO_PROCESS then
             triangulationManager.insert(POINTS_TO_PROCESS[tick])
             tick = tick + 1
