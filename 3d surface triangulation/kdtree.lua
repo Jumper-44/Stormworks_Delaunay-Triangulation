@@ -308,7 +308,7 @@ IKDTree = function(k_dimensions)
         ---@endsection
 
         ---@section IKDTree_remove
-        ---comment
+        ---Finds leaf containing point (assumed it is in tree) and removes it from leaf
         ---@param point table
         IKDTree_remove = function(point)
             local function removeRecursive(root, cd, depth)
@@ -331,8 +331,6 @@ IKDTree = function(k_dimensions)
 
             removeRecursive(tree_root, 1, 1)
         end;
-
-
 
         ---@section IKDTree_nearestNeighbors
         ---Returns the nearest point(s) in k-d tree to param point up to param maxNeighbors
@@ -388,6 +386,7 @@ IKDTree = function(k_dimensions)
     }
 end
 ---@endsection _IKDTREE_
+
 
 ---@section __IKDTREE_DEBUG__
 --[[
