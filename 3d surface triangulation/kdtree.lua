@@ -97,6 +97,9 @@ KDTree = function(k_dimensions)
         ---@return table
         KDTree_nearestNeighbors = function(point, maxNeighbors)
             local nearestPoints = {
+                ---Insertion sort
+                ---@param self table
+                ---@param p table
                 insert = function(self, p)
                     for i = 1, #self do
                         if p.len2 < self[i].len2 then
@@ -347,6 +350,9 @@ IKDTree = function(k_dimensions)
         ---@return table
         IKDTree_nearestNeighbors = function(point, maxNeighbors)
             local nearestPoints = {
+                ---Insertion sort
+                ---@param self table
+                ---@param p table
                 insert = function(self, p)
                     for i = 1, #self do
                         if p.len2 < self[i].len2 then
