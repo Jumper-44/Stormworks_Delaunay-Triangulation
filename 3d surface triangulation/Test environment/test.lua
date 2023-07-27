@@ -21,7 +21,7 @@ do
     simulator:setProperty("w", 16*32)
     simulator:setProperty("h", 16*32)
     simulator:setProperty("near", 0.1)
-    simulator:setProperty("renderDistance", 10000)
+    simulator:setProperty("renderDistance", 1000)
     simulator:setProperty("sizeX", 1) --* 1.8)
     simulator:setProperty("sizeY", 1)
     simulator:setProperty("positionOffsetX", 0)
@@ -47,11 +47,11 @@ do
         simulator:setInputNumber(4, screenConnection.touchY)
         --]]
 
-        simulator:setInputNumber(1, (simulator:getSlider(1) - 0) * 50)
-        simulator:setInputNumber(2, (simulator:getSlider(2) - 0) * 50)
-        simulator:setInputNumber(3, (simulator:getSlider(3) - 0.2) * 100)
+        simulator:setInputNumber(1, (simulator:getSlider(1) - 0) * 20)
+        simulator:setInputNumber(2, (simulator:getSlider(2) - 0.1) * 20)
+        simulator:setInputNumber(3, (simulator:getSlider(3) - 0.2) * 20)
         simulator:setInputNumber(4, (simulator:getSlider(4)) * math.pi)
-        simulator:setInputNumber(5, (simulator:getSlider(5)) * math.pi)
+        simulator:setInputNumber(5, (simulator:getSlider(5)) * -math.pi)
         simulator:setInputNumber(6, (simulator:getSlider(6)) * math.pi)
         simulator:setInputNumber(7, simulator:getSlider(7))
         simulator:setInputNumber(8, simulator:getSlider(8))
@@ -290,20 +290,58 @@ local function ShuffleInPlace(t)
 end
 
 local POINTS_TO_PROCESS = {}
-local xn, zn = 50, 50
-for i = 1, xn do
-    for j = 1, zn do
-        local id = #POINTS_TO_PROCESS+1
-        local x, z = i + (math.random()-.5)*.2 -xn/2, j + (math.random()-.5)*.5 -zn/2
-        local ang = Vec3(0, math.pi/2, (x+z)/(xn+zn)*math.pi*2)
-        local function fun() return math.sin(x) + math.cos(z) - 5 end
 
-        local rot = getRotationMatrixZYX(ang)
-        local p = Vec3(x, fun(), z)
+do
+    -- Helper function to generate evenly distributed points on a sphere using Fibonacci sphere sampling
+    local function generateEvenlyDistributedPointsOnSphere(numPoints, radius)
+    local points = {}
+    local goldenRatio = (1 + math.sqrt(5)) / 2
 
-        POINTS_TO_PROCESS[id] = {MatMul3xVec3(rot, p):unpack()}
+    for i = 1, numPoints do
+        local y = 1 - (i - 1) / (numPoints - 1) * 2
+        local radiusAtY = math.sqrt(1 - y * y) * radius
+        local theta = 2 * math.pi * (i - 1) / goldenRatio
+        local x = math.cos(theta) * radiusAtY
+        local z = math.sin(theta) * radiusAtY
+
+        table.insert(points, {x, y * radius, z})
     end
+
+    return points
 end
+
+    local numPoints = 100
+    local radius = 3
+
+    POINTS_TO_PROCESS = generateEvenlyDistributedPointsOnSphere(numPoints, radius)
+end
+
+--POINTS_TO_PROCESS = {
+--    {-0.5, -0.5, -0.5},
+--    { 0.5, -0.5, -0.5},
+--    { 0.5,  0.5, -0.5},
+--    {-0.5,  0.5, -0.5},
+--    {-0.5, -0.5,  0.5},
+--    { 0.5, -0.5,  0.5},
+--    { 0.5,  0.5,  0.5},
+--    {-0.5,  0.5,  0.5}
+--}
+
+--local xn, zn = 50, 50
+--for i = 1, xn do
+--    for j = 1, zn do
+--        local id = #POINTS_TO_PROCESS+1
+--        local x, z = i + (math.random()-.5)*.2 -xn/2, j + (math.random()-.5)*.5 -zn/2
+--        local ang = Vec3(0, math.pi/2, (x+z)/(xn+zn)*math.pi*2)
+--        local function fun() return math.sin(x) + math.cos(z) - 5 end
+--
+--        local rot = getRotationMatrixZYX(ang)
+--        local p = Vec3(x, fun(), z)
+--
+--        POINTS_TO_PROCESS[id] = {MatMul3xVec3(rot, p):unpack()}
+--    end
+--end
+
 
 --ShuffleInPlace(POINTS_TO_PROCESS)
 for i = 1, #POINTS_TO_PROCESS do POINTS_TO_PROCESS[i][4] = i end
@@ -311,6 +349,7 @@ for i = 1, #POINTS_TO_PROCESS do POINTS_TO_PROCESS[i][4] = i end
 
 require("3d surface triangulation.3d triangulation")
 local triangulationManager = SurfaceTriangulation()
+local triangle_list_hash = {}
 local triangle_buffer = {}
 
 local tick = 1
@@ -320,7 +359,7 @@ function onTick()
     output.setBool(1, isRendering)
 
     -- [[
-    for t = 1, 50 do
+    for t = 1, 1 do
         if tick <= #POINTS_TO_PROCESS then
             triangulationManager.insert(POINTS_TO_PROCESS[tick])
             tick = tick + 1
@@ -329,9 +368,20 @@ function onTick()
     repeat
         local value = triangulationManager.triangle_action_queue:popright()
         if value ~= nil then
-            triangle_buffer[#triangle_buffer+1] = {value[1][1], value[1][2], value[1][3], {200, 200, 200}}
+            if value[2] then
+                -- insert
+                triangle_list_hash[value[1]] = {value[1][1], value[1][2], value[1][3], {255, math.random(0,255), math.random(0,255)}}
+            else
+                -- remove
+                triangle_list_hash[value[1]] = nil
+            end
         end
     until not value
+
+    triangle_buffer = {}
+    for _, triangle in pairs(triangle_list_hash) do
+        triangle_buffer[#triangle_buffer+1] = triangle
+    end
     --]]
 
     if isRendering then
@@ -410,10 +460,10 @@ local n_sub_f = SCREEN.near-SCREEN.far
 
 function onDraw()
     if isRendering then
-        local points_buffer = WorldToScreen_points(POINTS_TO_PROCESS)
-
-        screen.setColor(255, 255, 0, 200)
+        local points_buffer = WorldToScreen_points(triangulationManager.vertices)
+        math.randomseed(1)
         for i = 1, #points_buffer do
+            screen.setColor(255, math.random(0, 255), math.random(0, 255), 200)
             local d = n_mul_f/(SCREEN.far + points_buffer[i][3]*n_sub_f)
             screen.drawCircleF(points_buffer[i][1], points_buffer[i][2], Clamp(10/d, 0.6, 10))
         end
@@ -424,9 +474,9 @@ function onDraw()
 
             if tri then
                 local color = triangle_buffer[i][4]
-                screen.setColor(color[1], color[2], color[3], 200)
+                screen.setColor(color[1], color[2], color[3], 150)
                 screen.drawTriangleF(tri[1][1], tri[1][2], tri[2][1], tri[2][2], tri[3][1], tri[3][2])
-                screen.setColor(10, 10, 10, 255)
+                screen.setColor(10, 10, 10, 200)
                 screen.drawTriangle(tri[1][1], tri[1][2], tri[2][1], tri[2][2], tri[3][1], tri[3][2])
             end
         end
