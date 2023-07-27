@@ -326,18 +326,20 @@ IKDTree = function(k_dimensions)
         ---@endsection
 
         ---@section IKDTree_remove
-        ---Finds leaf containing point (assumed to be the same table and not contents/coordinates of point) and removes it from leaf
+        ---Finds leaf containing point (assumed to be the same table and not contents/coordinates of point) and removes it from leaf.
+        ---Returns found point or nil if not found.
         ---@param point table
+        ---@return table|nil
         IKDTree_remove = function(point)
             local function removeRecursive(root, cd, depth)
                 -- Could try to slightly balance tree if removing last or very few points in leaf
                 if root.leaf then
                     for i = 1, #root do
                         if point == root[i] then
-                            table.remove(root, i)
-                            break
+                            return table.remove(root, i)
                         end
                     end
+                    return
                 else
                     return removeRecursive(
                     point[cd] < root.split and root.left or root.right,
@@ -347,7 +349,7 @@ IKDTree = function(k_dimensions)
                 end
             end
 
-            removeRecursive(tree_root, 1, 1)
+            return removeRecursive(tree_root, 1, 1)
         end;
 
         ---@section IKDTree_nearestNeighbors
@@ -418,13 +420,13 @@ do
     local rand = math.random
     math.randomseed(123)
 
-    for i = 1, 1000000 do
+    for i = 1, 100000 do
         points[i] = {(rand()-.5)*100, (rand()-.5)*100, (rand()-.5)*100}
         t.IKDTree_insert(points[i])
     end
 
-    for i = 500000, 1000000 do
-        t.IKDTree_remove(points[i])
+    for i = 50000, 100000 do
+        if not t.IKDTree_remove(points[i]) then error("Failed to find and remove point in k-d tree") end
         points[i] = nil
     end
 
@@ -456,16 +458,25 @@ do
     end
     print("iterations: "..#time..", avg: "..avg)
 
---  do -- nearest neighbors
---      local p = {(rand()-.5)*500, (rand()-.5)*500, (rand()-.5)*500}
---      print("--- nearest neighbors ---")
---      local tree_n = t.IKDTree_nearestNeighbors(p, 5)
---      for i = 1, #tree_n do
---          print(tree_n[i].len2)
---      end
---  end
+    do -- nearest neighbors
+        local p = {(rand()-.5)*100, (rand()-.5)*100, (rand()-.5)*100}
+
+        local brute_table = {}
+        for i = 1, #points do
+            brute_table[i] = points[i]
+            points[i].len2 = t.len2(p, points[i])
+        end
+        table.sort(brute_table, function(a, b) return a.len2 < b.len2 end)
+
+        print("--- nearest neighbors ---")
+        t1 = os.clock()
+        local tree_n = t.IKDTree_nearestNeighbors(p, 200)
+        t2 = os.clock()
+        print("time: "..(t2-t1))
+        for i = 1, #tree_n do
+            print("tree: "..tree_n[i].len2..", brute: "..brute_table[i].len2..", is equal: "..tostring(tree_n[i] == brute_table[i]))
+        end
+    end
 end
-
-
 --]]
 ---@endsection
