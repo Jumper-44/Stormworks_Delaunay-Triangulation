@@ -49,7 +49,7 @@ do
 
         simulator:setInputNumber(1, (simulator:getSlider(1) - 0) * 20)
         simulator:setInputNumber(2, (simulator:getSlider(2) - 0) * 20)
-        simulator:setInputNumber(3, (simulator:getSlider(3) - 0.2) * 50)
+        simulator:setInputNumber(3, (simulator:getSlider(3) - 0.2) * 100)
         simulator:setInputNumber(4, (simulator:getSlider(4)) * math.pi)
         simulator:setInputNumber(5, (simulator:getSlider(5)) * -math.pi)
         simulator:setInputNumber(6, (simulator:getSlider(6)) * math.pi)
@@ -308,7 +308,7 @@ do
     return points
 end
 
-    local numPoints = 1000
+    local numPoints = 250
     local radius = 7
 
     --POINTS_TO_PROCESS = generateEvenlyDistributedPointsOnSphere(numPoints, radius)
@@ -346,7 +346,7 @@ for i = 1, #POINTS_TO_PROCESS do POINTS_TO_PROCESS[i][4] = i end
 
 
 require("3d surface triangulation.3d triangulation")
-local triangulationManager = SurfaceTriangulation()
+local triangulationManager = SurfaceTriangulation(1.75^2)
 local triangle_list_hash = {}
 local triangle_buffer = {}
 
@@ -358,7 +358,7 @@ function onTick()
 
     -- [[
     local t1 = os.clock()
-    for t = 1, 250 do
+    for t = 1, 100 do
         if tick <= #POINTS_TO_PROCESS then
             triangulationManager.insert(POINTS_TO_PROCESS[tick])
             tick = tick + 1
@@ -476,7 +476,7 @@ function onDraw()
 
             if tri then
                 local color = triangle_buffer[i][4]
-                screen.setColor(color[1], color[2], color[3], 255)
+                screen.setColor(color[1], color[2], color[3], 150)
                 screen.drawTriangleF(tri[1][1], tri[1][2], tri[2][1], tri[2][2], tri[3][1], tri[3][2])
                 screen.setColor(10, 10, 10, 200)
                 screen.drawTriangle(tri[1][1], tri[1][2], tri[2][1], tri[2][2], tri[3][1], tri[3][2])

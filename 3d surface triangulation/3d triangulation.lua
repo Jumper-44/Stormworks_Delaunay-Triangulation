@@ -3,9 +3,12 @@ require("3d surface triangulation.kdtree")
 ---@class SurfaceTriangulation
 ---@section SurfaceTriangulation 1 _SURFACE_TRIANGULATION_
 ---comment
+---@param alpha_shapes_radius_squared number
 ---@return table
-SurfaceTriangulation = function()
+SurfaceTriangulation = function(alpha_shapes_radius_squared)
+    local add = function(p1, p2) return {p1[1] + p2[1], p1[2] + p2[2], p1[3] + p2[3]} end
     local sub = function(p1, p2) return {p1[1] - p2[1], p1[2] - p2[2], p1[3] - p2[3]} end
+    local scale = function(p, scalar) return {p[1] * scalar, p[2] * scalar, p[3] * scalar} end
     local dot = function(p1, p2) return p1[1] * p2[1] + p1[2] * p2[2] + p1[3] * p2[3] end
     local cross = function(p1, p2) return {
         p1[2] * p2[3] - p1[3] * p2[2],
@@ -30,7 +33,7 @@ SurfaceTriangulation = function()
 --    end
 
 
-    local kdtree, vertices, triangle_action_queue = IKDTree(3), {},
+    local kdtree_avgCenter, kdtree_vertices, alpha_shapes_radius_squared_epsilon, vertices, triangle_action_queue = IKDTree(3), IKDTree(3), alpha_shapes_radius_squared-1e-9, {},
         { -- https://www.lua.org/pil/11.4.html
             first = 0; last = -1;
 
@@ -73,7 +76,7 @@ SurfaceTriangulation = function()
         end
 
         avgCenter.tetrahedron = tetrahedron
-        kdtree.IKDTree_insert(avgCenter)
+        kdtree_avgCenter.IKDTree_insert(avgCenter)
 
         return tetrahedron
     end
@@ -105,10 +108,11 @@ SurfaceTriangulation = function()
             -- Do Bowyer-Watson Algorithm
             local vertices_size, tetrahedra_check_queue, invalid_tetrahedra, tetrahedra_check_queue_pointer =
                 #vertices + 1,
-                kdtree.IKDTree_nearestNeighbors(point, 1),
+                kdtree_avgCenter.IKDTree_nearestNeighbors(point, 1),
                 {}, 1
             vertices[vertices_size] = point
             point.id = vertices_size
+            kdtree_vertices.IKDTree_insert(point)
 
             for i = 1, #tetrahedra_check_queue do
                 tetrahedra_check_queue[i] = tetrahedra_check_queue[i].tetrahedron
@@ -125,8 +129,8 @@ SurfaceTriangulation = function()
                     current_tetrahedron.isInvalid = true
                     invalid_tetrahedra[#invalid_tetrahedra+1] = current_tetrahedron
 
-                    kdtree.IKDTree_remove(current_tetrahedron.avgCenter)
-                    --if not kdtree.IKDTree_remove(current_tetrahedron.avgCenter) then error("Failed to remove avgCenter from k-d tree",1) end -- DEBUG
+                    kdtree_avgCenter.IKDTree_remove(current_tetrahedron.avgCenter)
+                    --if not kdtree_avgCenter.IKDTree_remove(current_tetrahedron.avgCenter) then error("Failed to remove avgCenter from k-d tree",1) end -- DEBUG
 
                     current_tetrahedron.avgCenter = nil -- To allow gb
                 end
@@ -229,20 +233,32 @@ SurfaceTriangulation = function()
 
             -- Determine if new shared facet/triangle should be part of the final mesh
             for i = 1, #new_shared_facets do
-                local new_facet, new_t1, new_t2 = new_shared_facets[i][1], new_shared_facets[i][2], new_shared_facets[i][3]
+                local new_facet = new_shared_facets[i][1]
                 local v1, v2, v3 = new_facet[1], new_facet[2], new_facet[3]
 
                 -- Don't if a vertex is part of the super-tetrahedron
                 if not (v1.id < 0 or v2.id < 0 or v3.id < 0) then
-                    --local v13, v23 = sub(v1, v3), sub(v2, v3)
-                    --local cross_v = cross(v13, v23)
-                    --local parallelogram_area_squared = dot(cross_v, cross_v)
+                    local v21, v31, n, n2, d, d2, v0, t
+                    v21, v31 = sub(v2, v1), sub(v3, v1)
+                    n = cross(v21, v31)
+                    n2 = dot(n, n)
+                    d = scale(
+                        cross(
+                            sub( scale(v31, dot(v21, v21)), scale(v21, dot(v31, v31)) )
+                        ,n), 0.5 / n2
+                    )
+                    d2 = dot(d, d)
+                    v0 = add(v1, d)
 
-                    if new_t1[1].id < 0 or new_t1[2].id < 0 or new_t1[3].id < 0 or new_t1[4].id < 0 or
-                        new_t2[1].id < 0 or new_t2[2].id < 0 or new_t2[3].id < 0 or new_t2[4].id < 0
-                    then
-                        new_facet.isSurface = true
-                        triangle_action_queue:pushleft(new_facet, true)
+                    if d2 < alpha_shapes_radius_squared then
+                        t = ((alpha_shapes_radius_squared - d2) / n2)^0.5
+
+                        if kdtree_vertices.IKDTree_nearestNeighbors(add(scale(n, t), v0), 1)[1].len2 > alpha_shapes_radius_squared_epsilon or
+                            kdtree_vertices.IKDTree_nearestNeighbors(add(scale(n, -t), v0), 1)[1].len2 > alpha_shapes_radius_squared_epsilon
+                        then
+                            new_facet.isSurface = true
+                            triangle_action_queue:pushleft(new_facet, true)
+                        end
                     end
                 end
             end
