@@ -3,14 +3,30 @@
 -- Workshop: https://steamcommunity.com/profiles/76561198084249280/myworkshopfiles/
 --
 
----@section GetCircumCircle
+local add = function(p1, p2) return {p1[1] + p2[1], p1[2] + p2[2], p1[3] + p2[3]} end
+local sub = function(p1, p2) return {p1[1] - p2[1], p1[2] - p2[2], p1[3] - p2[3]} end
+local scale = function(p, scalar) return {p[1] * scalar, p[2] * scalar, p[3] * scalar} end
+local dot = function(p1, p2) return p1[1] * p2[1] + p1[2] * p2[2] + p1[3] * p2[3] end
+local cross = function(p1, p2) return {
+    p1[2] * p2[3] - p1[3] * p2[2],
+    p1[3] * p2[1] - p1[1] * p2[3],
+    p1[1] * p2[2] - p1[2] * p2[1]
+} end
+local det3d = function(a, b, c) return
+    a[1]   * (b[2] * c[3] - c[2] * b[3])
+    - b[1] * (a[2] * c[3] - c[2] * a[3])
+    + c[1] * (a[2] * b[3] - b[2] * a[3])
+end
+
+
+---@section GetCircumCircleFast
 ---Returns the circumcircle of three points that make up a triangle in 3d, so points are assumed to be non-collinear.
 ---Math from https://en.wikipedia.org/wiki/Circumcircle#Higher_dimensions
 ---@param pointA table
 ---@param pointB table
 ---@param pointC table
 ---@return table
-local GetCircumCircle = function(pointA, pointB, pointC)
+local GetCircumCircleFast = function(pointA, pointB, pointC)
     local ca_x, ca_y, ca_z,  cb_x, cb_y, cb_z =
         pointA[1] - pointC[1],
         pointA[2] - pointC[2],
@@ -45,19 +61,23 @@ local GetCircumCircle = function(pointA, pointB, pointC)
 end
 ---@endsection
 
+local GetCircumscribedSphereCentersOfTriangle = function(pa, pb, pc, radius_squared)
+    -- https://stackoverflow.com/a/11723659
+    local a, b, n, inv_denominator, d, d2, t
+    a, b = sub(pb, pa), sub(pc, pa)
+    n = cross(a, b)
+    inv_denominator = 0.5 / dot(n, n)
+    d = scale(cross(sub(scale(b, dot(a, a)), scale(a, dot(b, b))), n), inv_denominator)
+    o = add(pa, d)
+    d2 = dot(d, d)
 
-local sub = function(p1, p2) return {p1[1] - p2[1], p1[2] - p2[2], p1[3] - p2[3]} end
-local dot = function(p1, p2) return p1[1] * p2[1] + p1[2] * p2[2] + p1[3] * p2[3] end
-local cross = function(p1, p2) return {
-    p1[2] * p2[3] - p1[3] * p2[2],
-    p1[3] * p2[1] - p1[1] * p2[3],
-    p1[1] * p2[2] - p1[2] * p2[1]
-} end
-local det3d = function(a, b, c) return
-    a[1]   * (b[2] * c[3] - c[2] * b[3])
-    - b[1] * (a[2] * c[3] - c[2] * a[3])
-    + c[1] * (a[2] * b[3] - b[2] * a[3])
+    if d2 > radius_squared then return false end
+
+    t = (radius_squared - d2)^0.5 / dot(n, n)
+
+    return add(scale(n, t), o), add(scale(n, -t), o)
 end
+
 
 
 ---Returns the circumsphere of four points that make up a tetrahedron, so points are assumed to be non-collinear.
@@ -175,10 +195,13 @@ end
 
 
 local p1, p2, p3, p4 =
-    {0,     1e1,    0   },
+    {0,     -1e1,    0   },
     {-1e1,  -1e1,   0   },
     {1e1,   -1e1,   1e1 },
     {1e1,   -1e1,   -1e1}
 
-print(orient3d(p1, p2, p3, p4))
-print(insphere(p1, p2, p3, p4, {0, 1e1-1e-20, 0}))
+--print(orient3d(p1, p2, p3, p4))
+--print(insphere(p1, p2, p3, p4, {0, -0.5, 0}))
+
+local a, b = GetCircumscribedSphereCentersOfTriangle({1, 1, 0}, {1, 0, 0}, {0, 1, 1}, 1)
+print("..")
