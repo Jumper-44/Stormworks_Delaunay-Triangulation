@@ -23,31 +23,31 @@ SurfaceTriangulation = function()
 --      return det3d(sub(pa, pd), sub(pb, pd), sub(pc, pd))
 --  end
 
-    local function insphere(tetrahedron, point)
-        local ae, be, ce, de = sub(tetrahedron[1], point), sub(tetrahedron[2], point), sub(tetrahedron[3], point), sub(tetrahedron[4], point)
-        return dot(de, de) * det3d(ae, be, ce) - dot(ce, ce) * det3d(de, ae, be) + dot(be, be) * det3d(ce, de, ae) - dot(ae, ae) * det3d(be, ce, de)
-    end
+-- Inlined in repeat until loop where checking for invalid tetrahedra
+--    local function insphere(tetrahedron, point)
+--        local ae, be, ce, de = sub(tetrahedron[1], point), sub(tetrahedron[2], point), sub(tetrahedron[3], point), sub(tetrahedron[4], point)
+--        return dot(de, de) * det3d(ae, be, ce) - dot(ce, ce) * det3d(de, ae, be) + dot(be, be) * det3d(ce, de, ae) - dot(ae, ae) * det3d(be, ce, de)
+--    end
 
 
-    local kdtree = IKDTree(3)
-    local vertices = {}
-    local triangle_action_queue = { -- https://www.lua.org/pil/11.4.html
-        first = 0; last = -1;
+    local kdtree, vertices, triangle_action_queue = IKDTree(3), {},
+        { -- https://www.lua.org/pil/11.4.html
+            first = 0; last = -1;
 
-        pushleft = function(self, triangle, isInserting_else_remove)
-            local first = self.first - 1
-            self.first = first
-            self[first] = {triangle, isInserting_else_remove}
-        end;
-        popright = function(self)
-            local last = self.last
-            if self.first > last then return nil end
-            local value = self[last]
-            self[last] = nil         -- to allow garbage collection
-            self.last = last - 1
-            return value
-        end
-    }
+            pushleft = function(self, triangle, isInserting_else_remove)
+                local first = self.first - 1
+                self.first = first
+                self[first] = {triangle, isInserting_else_remove}
+            end;
+            popright = function(self)
+                local last = self.last
+                if self.first > last then return nil end
+                local value = self[last]
+                self[last] = nil         -- to allow garbage collection
+                self.last = last - 1
+                return value
+            end
+        }
 
     local NewTriangle = function(pointA, pointB, pointC)
         return {pointA, pointB, pointC, isSurface = false}
@@ -85,10 +85,10 @@ SurfaceTriangulation = function()
 
     -- Init super-tetrahedron
     local p1, p2, p3, p4 =
-        {0,     1e4,    0,      id = -1},
-        {-1e3,  -1e2,   0,      id = -2},
-        {1e3,   -1e2,   1e3,    id = -3},
-        {1e3,   -1e2,   -1e3,   id = -4}
+        {0,     1e5,    0,      id = -1},
+        {-1e6,  -1e2,   0,      id = -2},
+        {1e6,   -1e2,   1e6,    id = -3},
+        {1e6,   -1e2,   -1e6,   id = -4}
     NewTetrahedron(p1, p2, p3, p4).triangles = {
         NewTriangle(p2, p3, p4),
         NewTriangle(p3, p4, p1),
@@ -120,7 +120,8 @@ SurfaceTriangulation = function()
                 local current_tetrahedron = tetrahedra_check_queue[tetrahedra_check_queue_pointer]
 
                 -- Is current_tetrahedron invalid?
-                if insphere(current_tetrahedron, point) > -1e-9 then
+                local ae, be, ce, de = sub(current_tetrahedron[1], point), sub(current_tetrahedron[2], point), sub(current_tetrahedron[3], point), sub(current_tetrahedron[4], point)
+                if dot(de, de) * det3d(ae, be, ce) - dot(ce, ce) * det3d(de, ae, be) + dot(be, be) * det3d(ce, de, ae) - dot(ae, ae) * det3d(be, ce, de) > -1e-9 then -- Insphere test
                     current_tetrahedron.isInvalid = true
                     invalid_tetrahedra[#invalid_tetrahedra+1] = current_tetrahedron
 
@@ -137,7 +138,6 @@ SurfaceTriangulation = function()
 
                         -- if neighbor exist and has not been checked yet then add to queue
                         if current_neighbor and not current_neighbor.isChecked then
-
                             tetrahedra_check_queue[#tetrahedra_check_queue+1] = current_neighbor
                             current_neighbor.isChecked = true
                         end
@@ -154,7 +154,7 @@ SurfaceTriangulation = function()
 
             -- Now the invalid_tetrahedra makes up a polyhedron
             -- Find all facets/triangles that are not shared and shared in invalid_tetrahedra
-            local boundary_facets, boundary_facet_tetrahedron_neighbor, shared_facets_hash = {}, {}, {}
+            local boundary_facets, boundary_facet_tetrahedron_neighbor, shared_facets_hash, new_shared_facets = {}, {}, {}, {}
 
             for i = 1, #invalid_tetrahedra do
                 local current_invalid_tetrahedron = invalid_tetrahedra[i]
@@ -164,9 +164,8 @@ SurfaceTriangulation = function()
                     -- If facet doesn't have neighbor OR if neighbor exist and it is not invalid then add facet to boundary_facets
                     -- else then the current_neighbor.isInvalid and therefore the facet is shared
                     if not current_neighbor or not current_neighbor.isInvalid then
-                        local boundary_facets_size = #boundary_facets + 1
-                        boundary_facets[boundary_facets_size] = current_facet
-                        boundary_facet_tetrahedron_neighbor[boundary_facets_size] = current_neighbor
+                        boundary_facets[#boundary_facets + 1] = current_facet
+                        boundary_facet_tetrahedron_neighbor[#boundary_facets] = current_neighbor
                     else
                         shared_facets_hash[current_facet] = current_facet
                     end
@@ -185,8 +184,6 @@ SurfaceTriangulation = function()
             ---@endsection
 
             -- Construct new tetrahedra
-            local new_shared_facets_array, new_shared_facets_hash = {}, {}
-
             for i = 1, #boundary_facets do
                 local current_boundary_facet, current_boundary_facet_neighbor = boundary_facets[i], boundary_facet_tetrahedron_neighbor[i]
                 local new_tetrahedron = NewTetrahedron(current_boundary_facet[1], current_boundary_facet[2], current_boundary_facet[3], point)
@@ -213,8 +210,8 @@ SurfaceTriangulation = function()
                     local v1, v2 = new_tetrahedron[j % 3 + 1], new_tetrahedron[(j+1) % 3 + 1]
                     local hash_index = v1.id < v2.id and v1.id.."@"..v2.id or v2.id.."@"..v1.id
 
-                    if new_shared_facets_hash[hash_index] then
-                        local new_facet_and_tetrahedra_reference = new_shared_facets_hash[hash_index]
+                    if new_shared_facets[hash_index] then
+                        local new_facet_and_tetrahedra_reference = new_shared_facets[hash_index]
 
                         new_tetrahedron.triangles[j] = new_facet_and_tetrahedra_reference[1]
                         new_tetrahedron.neighbors[j] = new_facet_and_tetrahedra_reference[2]
@@ -224,15 +221,15 @@ SurfaceTriangulation = function()
                         local new_facet_and_tetrahedron_reference = {NewTriangle(v1, v2, point), new_tetrahedron, j}
                         new_tetrahedron.triangles[j] = new_facet_and_tetrahedron_reference[1]
 
-                        new_shared_facets_hash[hash_index] = new_facet_and_tetrahedron_reference
-                        new_shared_facets_array[#new_shared_facets_array+1] = new_facet_and_tetrahedron_reference
+                        new_shared_facets[hash_index] = new_facet_and_tetrahedron_reference
+                        new_shared_facets[#new_shared_facets+1] = new_facet_and_tetrahedron_reference
                     end
                 end
             end
 
             -- Determine if new shared facet/triangle should be part of the final mesh
-            for i = 1, #new_shared_facets_array do
-                local new_facet, new_t1, new_t2 = new_shared_facets_array[i][1], new_shared_facets_array[i][2], new_shared_facets_array[i][3]
+            for i = 1, #new_shared_facets do
+                local new_facet, new_t1, new_t2 = new_shared_facets[i][1], new_shared_facets[i][2], new_shared_facets[i][3]
                 local v1, v2, v3 = new_facet[1], new_facet[2], new_facet[3]
 
                 -- Don't if a vertex is part of the super-tetrahedron
