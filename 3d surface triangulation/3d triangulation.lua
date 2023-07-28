@@ -170,7 +170,7 @@ SurfaceTriangulation = function()
                         shared_facets_hash[current_facet] = current_facet
                     end
 
-                    current_invalid_tetrahedron.neighbors[j] = nil
+                    current_invalid_tetrahedron.neighbors[j] = nil -- To allow gb
                 end
             end
 
@@ -234,8 +234,16 @@ SurfaceTriangulation = function()
 
                 -- Don't if a vertex is part of the super-tetrahedron
                 if not (v1.id < 0 or v2.id < 0 or v3.id < 0) then
-                    new_facet.isSurface = true
-                    triangle_action_queue:pushleft(new_facet, true)
+                    --local v13, v23 = sub(v1, v3), sub(v2, v3)
+                    --local cross_v = cross(v13, v23)
+                    --local parallelogram_area_squared = dot(cross_v, cross_v)
+
+                    if new_t1[1].id < 0 or new_t1[2].id < 0 or new_t1[3].id < 0 or new_t1[4].id < 0 or
+                        new_t2[1].id < 0 or new_t2[2].id < 0 or new_t2[3].id < 0 or new_t2[4].id < 0
+                    then
+                        new_facet.isSurface = true
+                        triangle_action_queue:pushleft(new_facet, true)
+                    end
                 end
             end
 

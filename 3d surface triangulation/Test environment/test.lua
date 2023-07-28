@@ -211,7 +211,7 @@ end
 -- 'v = {x,y,z,id}'
 -- 'color = {r,g,b}'
 -- The 5th index for every triangle will be set to {tv1, tv2, tv3, triangle_depth}' by the function. 'tv' is the triangle transformed vertex
-local WorldToScreen_triangles = function(triangle_buffer, isRemovingOutOfViewTriangles)
+local WorldToScreen_triangles = function(triangle_buffer)
     local vertices_buffer = {}
 
     for i = #triangle_buffer, 1, -1 do -- Reverse iteration, so indexes can be removed from triangle_buffer while traversing if 'isRemovingOutOfViewTriangles == true'
@@ -265,17 +265,15 @@ local WorldToScreen_triangles = function(triangle_buffer, isRemovingOutOfViewTri
                 v3,
                 v1[3] + v2[3] + v3[3] -- triangle depth for doing painter's algorithm
             }
-        elseif isRemovingOutOfViewTriangles then
-            table.remove(triangle_buffer, i)
         else
-            currentTriangle[5] = false
+            table.remove(triangle_buffer, i)
         end
     end
 
     -- painter's algorithm
     table.sort(triangle_buffer,
         function(t1,t2)
-            return t1[5] and t2[5] and (t1[5][4] > t2[5][4])
+            return t1[5][4] > t2[5][4]
         end
     )
 end
@@ -310,10 +308,10 @@ do
     return points
 end
 
-    local numPoints = 200
-    local radius = 6
+    local numPoints = 1000
+    local radius = 7
 
-    POINTS_TO_PROCESS = generateEvenlyDistributedPointsOnSphere(numPoints, radius)
+    --POINTS_TO_PROCESS = generateEvenlyDistributedPointsOnSphere(numPoints, radius)
 end
 
 --POINTS_TO_PROCESS = {
@@ -327,20 +325,20 @@ end
 --    {-0.5,  0.5,  0.5}
 --}
 
---local xn, zn = 50, 50
---for i = 1, xn do
---    for j = 1, zn do
---        local id = #POINTS_TO_PROCESS+1
---        local x, z = i + (math.random()-.5)*.2 -xn/2, j + (math.random()-.5)*.5 -zn/2
---        local ang = Vec3(0, math.pi/2, (x+z)/(xn+zn)*math.pi*2)
---        local function fun() return math.sin(x) + math.cos(z) - 5 end
---
---        local rot = getRotationMatrixZYX(ang)
---        local p = Vec3(x, fun(), z)
---
---        POINTS_TO_PROCESS[id] = {MatMul3xVec3(rot, p):unpack()}
---    end
---end
+local xn, zn = 50, 50
+for i = 1, xn do
+    for j = 1, zn do
+        local id = #POINTS_TO_PROCESS+1
+        local x, z = i + (math.random()-.5)*.2 -xn/2, j + (math.random()-.5)*.5 -zn/2
+        local ang = Vec3(0, math.pi/2, (x+z)/(xn+zn)*math.pi*2)
+        local function fun() return math.sin(x) + math.cos(z) - 5 end
+
+        local rot = getRotationMatrixZYX(ang)
+        local p = Vec3(x, fun(), z)
+
+        POINTS_TO_PROCESS[id] = {MatMul3xVec3(rot, p):unpack()}
+    end
+end
 
 
 ShuffleInPlace(POINTS_TO_PROCESS)
@@ -360,7 +358,7 @@ function onTick()
 
     -- [[
     local t1 = os.clock()
-    for t = 1, 10 do
+    for t = 1, 250 do
         if tick <= #POINTS_TO_PROCESS then
             triangulationManager.insert(POINTS_TO_PROCESS[tick])
             tick = tick + 1
@@ -371,14 +369,16 @@ function onTick()
         if value ~= nil then
             if value[2] then
                 -- insert
-                triangle_list_hash[value[1]] = {value[1][1], value[1][2], value[1][3], {255, math.random(0,255), math.random(0,255)}}
+                triangle_list_hash[value[1]] = {value[1][1], value[1][2], value[1][3], {math.random(100, 255), math.random(0,255), math.random(0,255)}}
             else
                 -- remove
                 triangle_list_hash[value[1]] = nil
             end
         end
     until not value
-    if tick ~= #POINTS_TO_PROCESS + 1 then print(os.clock() - t1) end
+    if tick ~= #POINTS_TO_PROCESS + 1 then
+        print(os.clock() - t1)
+    end
 
     triangle_buffer = {}
     for _, triangle in pairs(triangle_list_hash) do
@@ -470,13 +470,13 @@ function onDraw()
         --    screen.drawCircleF(points_buffer[i][1], points_buffer[i][2], Clamp(10/d, 0.6, 10))
         --end
 
-        WorldToScreen_triangles(triangle_buffer, false)
+        WorldToScreen_triangles(triangle_buffer)
         for i = 1, #triangle_buffer do
             local tri = triangle_buffer[i][5]
 
             if tri then
                 local color = triangle_buffer[i][4]
-                screen.setColor(color[1], color[2], color[3], 150)
+                screen.setColor(color[1], color[2], color[3], 255)
                 screen.drawTriangleF(tri[1][1], tri[1][2], tri[2][1], tri[2][2], tri[3][1], tri[3][2])
                 screen.setColor(10, 10, 10, 200)
                 screen.drawTriangle(tri[1][1], tri[1][2], tri[2][1], tri[2][2], tri[3][1], tri[3][2])
