@@ -61,21 +61,25 @@ local GetCircumCircleFast = function(pointA, pointB, pointC)
 end
 ---@endsection
 
-local GetCircumscribedSphereCentersOfTriangle = function(pa, pb, pc, radius_squared)
+local GetCircumscribedSphereCentersOfTriangle = function(p1, p2, p3, radius_squared)
     -- https://stackoverflow.com/a/11723659
-    local a, b, n, inv_denominator, d, d2, t
-    a, b = sub(pb, pa), sub(pc, pa)
-    n = cross(a, b)
-    inv_denominator = 0.5 / dot(n, n)
-    d = scale(cross(sub(scale(b, dot(a, a)), scale(a, dot(b, b))), n), inv_denominator)
-    o = add(pa, d)
+    local p21, p31, n, n2, d, d2, p0, t
+    p21, p31 = sub(p2, p1), sub(p3, p1)
+    n = cross(p21, p31)
+    n2 = dot(n, n)
+
+    d = scale(
+        cross(
+            sub( scale(p31, dot(p21, p21)), scale(p21, dot(p31, p31)) )
+        ,n), 0.5 / n2
+    )
     d2 = dot(d, d)
+    p0 = add(p1, d)
 
     if d2 > radius_squared then return false end
+    t = ((radius_squared - d2) / n2)^0.5
 
-    t = (radius_squared - d2)^0.5 / dot(n, n)
-
-    return add(scale(n, t), o), add(scale(n, -t), o)
+    return add(scale(n, t), p0), add(scale(n, -t), p0)
 end
 
 
@@ -203,5 +207,5 @@ local p1, p2, p3, p4 =
 --print(orient3d(p1, p2, p3, p4))
 --print(insphere(p1, p2, p3, p4, {0, -0.5, 0}))
 
-local a, b = GetCircumscribedSphereCentersOfTriangle({1, 1, 0}, {1, 0, 0}, {0, 1, 1}, 1)
-print("..")
+local a, b = GetCircumscribedSphereCentersOfTriangle({-4.31, 2.46, 1.26}, {-5.67, 4.6, 3.13}, {-4.45, 5, 0.58}, 100)
+print("break")
