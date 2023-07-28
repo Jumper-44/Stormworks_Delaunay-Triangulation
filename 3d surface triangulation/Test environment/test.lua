@@ -48,8 +48,8 @@ do
         --]]
 
         simulator:setInputNumber(1, (simulator:getSlider(1) - 0) * 20)
-        simulator:setInputNumber(2, (simulator:getSlider(2) - 0.1) * 20)
-        simulator:setInputNumber(3, (simulator:getSlider(3) - 0.2) * 20)
+        simulator:setInputNumber(2, (simulator:getSlider(2) - 0) * 20)
+        simulator:setInputNumber(3, (simulator:getSlider(3) - 0.2) * 50)
         simulator:setInputNumber(4, (simulator:getSlider(4)) * math.pi)
         simulator:setInputNumber(5, (simulator:getSlider(5)) * -math.pi)
         simulator:setInputNumber(6, (simulator:getSlider(6)) * math.pi)
@@ -310,8 +310,8 @@ do
     return points
 end
 
-    local numPoints = 100
-    local radius = 3
+    local numPoints = 200
+    local radius = 6
 
     POINTS_TO_PROCESS = generateEvenlyDistributedPointsOnSphere(numPoints, radius)
 end
@@ -343,7 +343,7 @@ end
 --end
 
 
---ShuffleInPlace(POINTS_TO_PROCESS)
+ShuffleInPlace(POINTS_TO_PROCESS)
 for i = 1, #POINTS_TO_PROCESS do POINTS_TO_PROCESS[i][4] = i end
 
 
@@ -359,7 +359,8 @@ function onTick()
     output.setBool(1, isRendering)
 
     -- [[
-    for t = 1, 1 do
+    local t1 = os.clock()
+    for t = 1, 10 do
         if tick <= #POINTS_TO_PROCESS then
             triangulationManager.insert(POINTS_TO_PROCESS[tick])
             tick = tick + 1
@@ -377,6 +378,7 @@ function onTick()
             end
         end
     until not value
+    if tick ~= #POINTS_TO_PROCESS + 1 then print(os.clock() - t1) end
 
     triangle_buffer = {}
     for _, triangle in pairs(triangle_list_hash) do
@@ -460,13 +462,13 @@ local n_sub_f = SCREEN.near-SCREEN.far
 
 function onDraw()
     if isRendering then
-        local points_buffer = WorldToScreen_points(triangulationManager.vertices)
-        math.randomseed(1)
-        for i = 1, #points_buffer do
-            screen.setColor(255, math.random(0, 255), math.random(0, 255), 200)
-            local d = n_mul_f/(SCREEN.far + points_buffer[i][3]*n_sub_f)
-            screen.drawCircleF(points_buffer[i][1], points_buffer[i][2], Clamp(10/d, 0.6, 10))
-        end
+        --local points_buffer = WorldToScreen_points(triangulationManager.vertices)
+        --math.randomseed(1)
+        --for i = 1, #points_buffer do
+        --    screen.setColor(math.random(0, 255), math.random(0, 255), math.random(0, 255), 200)
+        --    local d = n_mul_f/(SCREEN.far + points_buffer[i][3]*n_sub_f)
+        --    screen.drawCircleF(points_buffer[i][1], points_buffer[i][2], Clamp(10/d, 0.6, 10))
+        --end
 
         WorldToScreen_triangles(triangle_buffer, false)
         for i = 1, #triangle_buffer do
@@ -482,7 +484,8 @@ function onDraw()
         end
 
         screen.setColor(255,0,0)
-        screen.drawText(0,00, "in view: "..#points_buffer)
+        screen.drawText(0, 0, "Vertices: "..#triangulationManager.vertices)
+        screen.drawText(0, 10, "Triangles in view: "..#triangle_buffer)
     end
 end
 
