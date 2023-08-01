@@ -334,19 +334,25 @@ for i = 1, xn do
         local function fun() return math.sin(x) + math.cos(z) - 5 end
 
         local rot = getRotationMatrixZYX(ang)
-        local p = Vec3(x, fun(), z)
 
-        POINTS_TO_PROCESS[id] = {MatMul3xVec3(rot, p):unpack()}
+        local p = Vec3(x, fun(), z)
+        local n = Vec3(0, 1, 0)
+
+        p = MatMul3xVec3(rot, p)
+        n = MatMul3xVec3(rot, n)
+
+        POINTS_TO_PROCESS[id] = {p:unpack()}
+        POINTS_TO_PROCESS[id].normal = {n:unpack()}
     end
 end
 
-
+math.randomseed(531015064916)
 ShuffleInPlace(POINTS_TO_PROCESS)
 for i = 1, #POINTS_TO_PROCESS do POINTS_TO_PROCESS[i][4] = i end
 
 
 require("3d surface triangulation.3d triangulation")
-local triangulationManager = SurfaceTriangulation(1.75^2)
+local triangulationManager = SurfaceTriangulation(1^2, 2^2)
 local triangle_list_hash = {}
 local triangle_buffer = {}
 
@@ -358,7 +364,7 @@ function onTick()
 
     -- [[
     local t1 = os.clock()
-    for t = 1, 100 do
+    for t = 1, 500 do
         if tick <= #POINTS_TO_PROCESS then
             triangulationManager.insert(POINTS_TO_PROCESS[tick])
             tick = tick + 1
@@ -369,15 +375,41 @@ function onTick()
         if value ~= nil then
             if value[2] then
                 -- insert
-                triangle_list_hash[value[1]] = {value[1][1], value[1][2], value[1][3], {math.random(100, 255), math.random(0,255), math.random(0,255)}}
+                triangle_list_hash[value[1]] = {value[1][1], value[1][2], value[1][3], {255, 255, 255}}
             else
                 -- remove
                 triangle_list_hash[value[1]] = nil
             end
         end
     until not value
-    if tick ~= #POINTS_TO_PROCESS + 1 then
-        print(os.clock() - t1)
+    if tick <= #POINTS_TO_PROCESS + 1 then
+        print("triangulation time: "..(os.clock() - t1))
+    end
+
+    if tick == #POINTS_TO_PROCESS + 1 then
+        tick = tick + 1
+        local surfaces = {}
+        for tri in pairs(triangulationManager.surfaces_hash_debug) do
+            surfaces[#surfaces+1] = tri
+        end
+        print("triangles: "..#surfaces)
+        --triangulationManager.evaluateSurface(surfaces)
+
+--        for j = 1, #surfaces - 1 do -- Debug to test/verify that every triangle is unique
+--            local currentTri = surfaces[j]
+--            local c_str = {currentTri[1].id, currentTri[2].id, currentTri[3].id}
+--            table.sort(c_str)
+--
+--            for k = j + 1, #surfaces do
+--                local otherTri = surfaces[k]
+--                local o_str = {otherTri[1].id, otherTri[2].id, otherTri[3].id}
+--                table.sort(o_str)
+--
+--                if c_str[1] == o_str[1] and c_str[2] == o_str[2] and c_str[3] == o_str[3] then
+--                    error()
+--                end
+--            end
+--        end
     end
 
     triangle_buffer = {}
