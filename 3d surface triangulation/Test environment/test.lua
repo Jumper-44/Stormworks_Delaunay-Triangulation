@@ -352,7 +352,7 @@ for i = 1, #POINTS_TO_PROCESS do POINTS_TO_PROCESS[i][4] = i end
 
 
 require("3d surface triangulation.3d triangulation")
-local triangulationManager = SurfaceTriangulation(1^2, 2^2)
+local triangulationManager = SurfaceTriangulation(1^2, 1.6^2)
 local triangle_list_hash = {}
 local triangle_buffer = {}
 
@@ -364,7 +364,7 @@ function onTick()
 
     -- [[
     local t1 = os.clock()
-    for t = 1, 500 do
+    for t = 1, 100 do
         if tick <= #POINTS_TO_PROCESS then
             triangulationManager.insert(POINTS_TO_PROCESS[tick])
             tick = tick + 1

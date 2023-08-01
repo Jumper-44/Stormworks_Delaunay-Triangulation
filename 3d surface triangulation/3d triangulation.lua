@@ -134,16 +134,14 @@ SurfaceTriangulation = function(alpha_min, alpha_max)
                     --alpha = (density) / (alpha_max - alpha_min)   -- (density - min_density) / (max_density - min_density)
                     alpha = alpha_max --math.max(math.min(alpha, alpha_max), alpha_min)
 
---                        vertices_norm_avg = add(add(v1.normal, v2.normal), v3.normal)
+                    vertices_norm_avg = add(add(v1.normal, v2.normal), v3.normal)
 
                     t = ((alpha - d2) / n2)^0.5
---                        t = dot(n, vertices_norm_avg) > 0 and t or -t
+                    t = dot(n, vertices_norm_avg) < 0 and t or -t
 
                     v0 = add(v1, d)
 
-                    if kdtree_vertices.IKDTree_nearestNeighbors(add(scale(n, t), v0), 1)[1].len2 > alpha - 1e-9
-                    or kdtree_vertices.IKDTree_nearestNeighbors(add(scale(n, -t), v0), 1)[1].len2 > alpha - 1e-9
-                    then
+                    if kdtree_vertices.IKDTree_nearestNeighbors(add(scale(n, t), v0), 1)[1].len2 > alpha - 1e-9 then
                         if not new_facet.isSurface then
                             new_facet.isSurface = true
                             triangle_action_queue:pushleft(new_facet, true)
