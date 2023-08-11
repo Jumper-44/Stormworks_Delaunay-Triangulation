@@ -1,3 +1,5 @@
+-- GitHub: https://github.com/Jumper-44
+
 require("3d surface triangulation.kdtree")
 
 ---@class SurfaceTriangulation
