@@ -1,10 +1,12 @@
+-- GitHub: https://github.com/Jumper-44
+
 -- *ReadMe*
 --
 -- There are two functions for k-d tree here: KDTree() and IKDTree()
 -- Initially made KDTree(), in which points are in the internal nodes and only has insertion and nearestNeighbor(s) and rangeSearch functions.
 -- Then I made IKDTree() for Incremental-KDTree, which only has points in leaf nodes and will buffer points in leaf before splitting. Has insert, remove and nearestNeighbor(s) functions.
 -- I recommend to use IKDTree(), even if you don't need to remove from the tree, then it should hopefully still be more balanced, due to buffering up before splitting.
--- Also IDKTree doesn't handle well if points coordinates are equal
+-- Also IDKTree doesn't handle well if points coordinates are equal, so if that is likely, then a small noise like '(math.random() - 0.5) * 1e-9' would do.
 
 
 ---@class KDTree

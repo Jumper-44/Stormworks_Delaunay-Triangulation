@@ -1,7 +1,4 @@
--- Author: Jumper
 -- GitHub: https://github.com/Jumper-44
--- Workshop: https://steamcommunity.com/profiles/76561198084249280/myworkshopfiles/
---
 
 local add = function(p1, p2) return {p1[1] + p2[1], p1[2] + p2[2], p1[3] + p2[3]} end
 local sub = function(p1, p2) return {p1[1] - p2[1], p1[2] - p2[2], p1[3] - p2[3]} end
