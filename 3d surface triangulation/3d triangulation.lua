@@ -9,20 +9,17 @@ require("3d surface triangulation.kdtree")
 ---@param alpha_max number
 ---@return table
 SurfaceTriangulation = function(alpha_min, alpha_max)
-    local add = function(p1, p2) return {p1[1] + p2[1], p1[2] + p2[2], p1[3] + p2[3]} end
-    local sub = function(p1, p2) return {p1[1] - p2[1], p1[2] - p2[2], p1[3] - p2[3]} end
-    local scale = function(p, scalar) return {p[1] * scalar, p[2] * scalar, p[3] * scalar} end
-    local dot = function(p1, p2) return p1[1] * p2[1] + p1[2] * p2[2] + p1[3] * p2[3] end
-    local cross = function(p1, p2) return {
+    local add, sub, scale, dot, cross,  NewTriangle, NewTetrahedron, EvaluateSurface
+
+    add = function(p1, p2) return {p1[1] + p2[1], p1[2] + p2[2], p1[3] + p2[3]} end
+    sub = function(p1, p2) return {p1[1] - p2[1], p1[2] - p2[2], p1[3] - p2[3]} end
+    scale = function(p, scalar) return {p[1] * scalar, p[2] * scalar, p[3] * scalar} end
+    dot = function(p1, p2) return p1[1] * p2[1] + p1[2] * p2[2] + p1[3] * p2[3] end
+    cross = function(p1, p2) return {
         p1[2] * p2[3] - p1[3] * p2[2],
         p1[3] * p2[1] - p1[1] * p2[3],
         p1[1] * p2[2] - p1[2] * p2[1]
     } end
-    local det3d = function(a, b, c) return
-        a[1]   * (b[2] * c[3] - c[2] * b[3])
-        - b[1] * (a[2] * c[3] - c[2] * a[3])
-        + c[1] * (a[2] * b[3] - b[2] * a[3])
-    end
 
 -- Inlined in NewTetrahedron()
 --  local function orient3d(pa, pb, pc, pd)
@@ -55,12 +52,12 @@ SurfaceTriangulation = function(alpha_min, alpha_max)
             end
         }
 
-    local NewTriangle = function(pointA, pointB, pointC)
+    NewTriangle = function(pointA, pointB, pointC)
         return {pointA, pointB, pointC, isSurface = false}
     end
 
-    local NewTetrahedron = function(pointA, pointB, pointC, pointD)
-        local avgCenter, orient = {}, det3d(sub(pointA, pointD), sub(pointB, pointD), sub(pointC, pointD)) > 0
+    NewTetrahedron = function(pointA, pointB, pointC, pointD)
+        local avgCenter, orient = {}, dot(cross(sub(pointB, pointA), sub(pointC, pointA)), sub(pointA, pointD)) > 0
 
         local tetrahedron = {
             orient and pointA or pointB,
@@ -104,7 +101,7 @@ SurfaceTriangulation = function(alpha_min, alpha_max)
 
     local surfaces_hash_debug = {}
 
-    local EvaluateSurface = function(triangle_list)
+    EvaluateSurface = function(triangle_list)
         for i = 1, #triangle_list do
             local new_facet, local_density, density, alpha = triangle_list[i], {0, 0, 0}, 0, 0
             local v1, v2, v3 = new_facet[1], new_facet[2], new_facet[3]
@@ -185,7 +182,7 @@ SurfaceTriangulation = function(alpha_min, alpha_max)
 
                 -- Is current_tetrahedron invalid?
                 local ae, be, ce, de = sub(current_tetrahedron[1], point), sub(current_tetrahedron[2], point), sub(current_tetrahedron[3], point), sub(current_tetrahedron[4], point)
-                if dot(de, de) * det3d(ae, be, ce) - dot(ce, ce) * det3d(de, ae, be) + dot(be, be) * det3d(ce, de, ae) - dot(ae, ae) * det3d(be, ce, de) > -1e-9 then -- Insphere test
+                if dot(de, de) * dot(ae, cross(be, ce)) - dot(ce, ce) * dot(de, cross(ae, be)) + dot(be, be) * dot(ce, cross(de, ae)) - dot(ae, ae) * dot(be, cross(ce, de)) > -1e-9 then -- Insphere test
                     current_tetrahedron.isInvalid = true
                     invalid_tetrahedra[#invalid_tetrahedra+1] = current_tetrahedron
 

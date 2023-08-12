@@ -9,11 +9,6 @@ local cross = function(p1, p2) return {
     p1[3] * p2[1] - p1[1] * p2[3],
     p1[1] * p2[2] - p1[2] * p2[1]
 } end
-local det3d = function(a, b, c) return
-    a[1]   * (b[2] * c[3] - c[2] * b[3])
-    - b[1] * (a[2] * c[3] - c[2] * a[3])
-    + c[1] * (a[2] * b[3] - b[2] * a[3])
-end
 
 
 ---@section GetCircumCircleFast
@@ -143,7 +138,7 @@ local function orient3dfast(pa, pb, pc, pd)
 end
 
 local function orient3d(pa, pb, pc, pd)
-    return det3d(sub(pa, pd), sub(pb, pd), sub(pc, pd))
+    return dot(cross(sub(pb, pa), sub(pc, pa)), sub(pa, pd))
 end
 
 local function inspherefast(pa, pb, pc, pd, pe)
@@ -190,19 +185,19 @@ end
 
 local function insphere(pa, pb, pc, pd, pe)
     local ae, be, ce, de = sub(pa, pe), sub(pb, pe), sub(pc, pe), sub(pd, pe)
-    return dot(de, de) * det3d(ae, be, ce) - dot(ce, ce) * det3d(de, ae, be) + dot(be, be) * det3d(ce, de, ae) - dot(ae, ae) * det3d(be, ce, de)
+    return dot(de, de) * dot(ae, cross(be, ce)) - dot(ce, ce) * dot(de, cross(ae, be)) + dot(be, be) * dot(ce, cross(de, ae)) - dot(ae, ae) * dot(be, cross(ce, de))
 end
 
 
 
 local p1, p2, p3, p4 =
-    {0,     -1e1,    0   },
+    {0,     1e2,    0   },
     {-1e1,  -1e1,   0   },
     {1e1,   -1e1,   1e1 },
     {1e1,   -1e1,   -1e1}
 
---print(orient3d(p1, p2, p3, p4))
---print(insphere(p1, p2, p3, p4, {0, -0.5, 0}))
+print(orient3d(p1, p2, p3, p4))
+print(insphere(p1, p2, p3, p4, {0, -0.5, 0}))
 
 local a, b = GetCircumscribedSphereCentersOfTriangle({-4.31, 2.46, 1.26}, {-5.67, 4.6, 3.13}, {-4.45, 5, 0.58}, 100)
 print("break")
