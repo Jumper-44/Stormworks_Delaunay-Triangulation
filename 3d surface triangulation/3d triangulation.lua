@@ -21,18 +21,6 @@ SurfaceTriangulation = function(alpha_min, alpha_max)
         p1[1] * p2[2] - p1[2] * p2[1]
     } end
 
--- Inlined in NewTetrahedron()
---  local function orient3d(pa, pb, pc, pd)
---      return det3d(sub(pa, pd), sub(pb, pd), sub(pc, pd))
---  end
-
--- Inlined in repeat until loop where checking for invalid tetrahedra
---    local function insphere(tetrahedron, point)
---        local ae, be, ce, de = sub(tetrahedron[1], point), sub(tetrahedron[2], point), sub(tetrahedron[3], point), sub(tetrahedron[4], point)
---        return dot(de, de) * det3d(ae, be, ce) - dot(ce, ce) * det3d(de, ae, be) + dot(be, be) * det3d(ce, de, ae) - dot(ae, ae) * det3d(be, ce, de)
---    end
-
-
     local kdtree_avgCenter, kdtree_vertices, vertices, triangle_action_queue = IKDTree(3), IKDTree(3), {},
         { -- https://www.lua.org/pil/11.4.html
             first = 0; last = -1;
@@ -57,7 +45,7 @@ SurfaceTriangulation = function(alpha_min, alpha_max)
     end
 
     NewTetrahedron = function(pointA, pointB, pointC, pointD)
-        local avgCenter, orient = {}, dot(cross(sub(pointB, pointA), sub(pointC, pointA)), sub(pointA, pointD)) > 0
+        local orient = dot(cross(sub(pointB, pointA), sub(pointC, pointA)), sub(pointA, pointD)) > 0
 
         local tetrahedron = {
             orient and pointA or pointB,
@@ -66,17 +54,15 @@ SurfaceTriangulation = function(alpha_min, alpha_max)
             pointD,
             triangles = {},
             neighbors = {},
-            avgCenter = avgCenter,
+            avgCenter = {},
             isInvalid = false,
             isChecked = false
         }
 
-        for i = 1, 3 do -- Slight random variation in coordinates, as this IKDTree doesn't handle well if coordinates are equal
-            avgCenter[i] = 0.25 * (pointA[i] + pointB[i] + pointC[i] + pointD[i]) + (math.random() - 0.5) * 1e-6
-        end
+        tetrahedron.avgCenter = scale(add(add(pointA, pointB), add(pointC, pointD)), 0.25)
 
-        avgCenter.tetrahedron = tetrahedron
-        kdtree_avgCenter.IKDTree_insert(avgCenter)
+        tetrahedron.avgCenter.tetrahedron = tetrahedron
+        kdtree_avgCenter.IKDTree_insert(tetrahedron.avgCenter)
 
         return tetrahedron
     end
@@ -171,10 +157,8 @@ SurfaceTriangulation = function(alpha_min, alpha_max)
             point.id = vertices_size
             kdtree_vertices.IKDTree_insert(point)
 
-            for i = 1, #tetrahedra_check_queue do
-                tetrahedra_check_queue[i] = tetrahedra_check_queue[i].tetrahedron
-                tetrahedra_check_queue[i].isChecked = true
-            end
+            tetrahedra_check_queue[1] = tetrahedra_check_queue[1].tetrahedron
+            tetrahedra_check_queue[1].isChecked = true
 
             -- Find all invalid tetrahedra
             repeat

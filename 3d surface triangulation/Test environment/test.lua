@@ -308,10 +308,10 @@ do
     return points
 end
 
-    local numPoints = 250
+    local numPoints = 2000
     local radius = 7
 
-    --POINTS_TO_PROCESS = generateEvenlyDistributedPointsOnSphere(numPoints, radius)
+    POINTS_TO_PROCESS = generateEvenlyDistributedPointsOnSphere(numPoints, radius)
 end
 
 --POINTS_TO_PROCESS = {
@@ -324,27 +324,35 @@ end
 --    { 0.5,  0.5,  0.5},
 --    {-0.5,  0.5,  0.5}
 --}
+--
+for i = 1, #POINTS_TO_PROCESS do
+    POINTS_TO_PROCESS[i].normal = {-POINTS_TO_PROCESS[i][1], -POINTS_TO_PROCESS[i][2], -POINTS_TO_PROCESS[i][3]}
 
-local xn, zn = 50, 50
-for i = 1, xn do
-    for j = 1, zn do
-        local id = #POINTS_TO_PROCESS+1
-        local x, z = i + (math.random()-.5)*.2 -xn/2, j + (math.random()-.5)*.5 -zn/2
-        local ang = Vec3(0, math.pi/2, (x+z)/(xn+zn)*math.pi*2)
-        local function fun() return math.sin(x) + math.cos(z) - 5 end
-
-        local rot = getRotationMatrixZYX(ang)
-
-        local p = Vec3(x, fun(), z)
-        local n = Vec3(0, 1, 0)
-
-        p = MatMul3xVec3(rot, p)
-        n = MatMul3xVec3(rot, n)
-
-        POINTS_TO_PROCESS[id] = {p:unpack()}
-        POINTS_TO_PROCESS[id].normal = {n:unpack()}
-    end
+    POINTS_TO_PROCESS[i][1] = POINTS_TO_PROCESS[i][1] + (math.random() - 0.5) * 1e-6
+    POINTS_TO_PROCESS[i][2] = POINTS_TO_PROCESS[i][2] + (math.random() - 0.5) * 1e-6
+    POINTS_TO_PROCESS[i][3] = POINTS_TO_PROCESS[i][3] + (math.random() - 0.5) * 1e-6
 end
+
+--local xn, zn = 50, 50
+--for i = 1, xn do
+--    for j = 1, zn do
+--        local id = #POINTS_TO_PROCESS+1
+--        local x, z = i + (math.random()-.5)*.2 -xn/2, j + (math.random()-.5)*.5 -zn/2
+--        local ang = Vec3(0, math.pi/2, (x+z)/(xn+zn)*math.pi*2)
+--        local function fun() return math.sin(x) + math.cos(z) - 5 end
+--
+--        local rot = getRotationMatrixZYX(ang)
+--
+--        local p = Vec3(x, fun(), z)
+--        local n = Vec3(0, 1, 0)
+--
+--        p = MatMul3xVec3(rot, p)
+--        n = MatMul3xVec3(rot, n)
+--
+--        POINTS_TO_PROCESS[id] = {p:unpack()}
+--        POINTS_TO_PROCESS[id].normal = {n:unpack()}
+--    end
+--end
 
 math.randomseed(531015064916)
 ShuffleInPlace(POINTS_TO_PROCESS)
