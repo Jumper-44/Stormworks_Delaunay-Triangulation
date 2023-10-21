@@ -212,9 +212,9 @@ end
 -- 'color = {r,g,b}'
 -- The 5th index for every triangle will be set to {tv1, tv2, tv3, triangle_depth}' by the function. 'tv' is the triangle transformed vertex
 local WorldToScreen_triangles = function(triangle_buffer)
-    local vertices_buffer = {}
+    local vertices_buffer, new_triangle_buffer = {}, {}
 
-    for i = #triangle_buffer, 1, -1 do -- Reverse iteration, so indexes can be removed from triangle_buffer while traversing if 'isRemovingOutOfViewTriangles == true'
+    for i = #triangle_buffer, 1, -1 do -- Reverse iteration, so indexes can be removed from triangle_buffer while traversing
         local currentTriangle, transformed_vertices = triangle_buffer[i], {}
 
         -- Loop is for finding or calculating the 3 transformed_vertices of currentTriangle
@@ -265,17 +265,18 @@ local WorldToScreen_triangles = function(triangle_buffer)
                 v3,
                 v1[3] + v2[3] + v3[3] -- triangle depth for doing painter's algorithm
             }
-        else
-            table.remove(triangle_buffer, i)
+            new_triangle_buffer[#new_triangle_buffer+1] = currentTriangle
         end
     end
 
     -- painter's algorithm
-    table.sort(triangle_buffer,
+    table.sort(new_triangle_buffer,
         function(t1,t2)
             return t1[5][4] > t2[5][4]
         end
     )
+
+    return new_triangle_buffer
 end
 --#endregion Render Function(s)
 
@@ -311,7 +312,7 @@ end
     local numPoints = 2000
     local radius = 7
 
-    POINTS_TO_PROCESS = generateEvenlyDistributedPointsOnSphere(numPoints, radius)
+    --POINTS_TO_PROCESS = generateEvenlyDistributedPointsOnSphere(numPoints, radius)
 end
 
 --POINTS_TO_PROCESS = {
@@ -325,34 +326,34 @@ end
 --    {-0.5,  0.5,  0.5}
 --}
 --
-for i = 1, #POINTS_TO_PROCESS do
-    POINTS_TO_PROCESS[i].normal = {-POINTS_TO_PROCESS[i][1], -POINTS_TO_PROCESS[i][2], -POINTS_TO_PROCESS[i][3]}
-
-    POINTS_TO_PROCESS[i][1] = POINTS_TO_PROCESS[i][1] + (math.random() - 0.5) * 1e-6
-    POINTS_TO_PROCESS[i][2] = POINTS_TO_PROCESS[i][2] + (math.random() - 0.5) * 1e-6
-    POINTS_TO_PROCESS[i][3] = POINTS_TO_PROCESS[i][3] + (math.random() - 0.5) * 1e-6
-end
-
---local xn, zn = 50, 50
---for i = 1, xn do
---    for j = 1, zn do
---        local id = #POINTS_TO_PROCESS+1
---        local x, z = i + (math.random()-.5)*.2 -xn/2, j + (math.random()-.5)*.5 -zn/2
---        local ang = Vec3(0, math.pi/2, (x+z)/(xn+zn)*math.pi*2)
---        local function fun() return math.sin(x) + math.cos(z) - 5 end
+--for i = 1, #POINTS_TO_PROCESS do
+--    POINTS_TO_PROCESS[i].normal = {-POINTS_TO_PROCESS[i][1], -POINTS_TO_PROCESS[i][2], -POINTS_TO_PROCESS[i][3]}
 --
---        local rot = getRotationMatrixZYX(ang)
---
---        local p = Vec3(x, fun(), z)
---        local n = Vec3(0, 1, 0)
---
---        p = MatMul3xVec3(rot, p)
---        n = MatMul3xVec3(rot, n)
---
---        POINTS_TO_PROCESS[id] = {p:unpack()}
---        POINTS_TO_PROCESS[id].normal = {n:unpack()}
---    end
+--    POINTS_TO_PROCESS[i][1] = POINTS_TO_PROCESS[i][1] + (math.random() - 0.5) * 1e-6
+--    POINTS_TO_PROCESS[i][2] = POINTS_TO_PROCESS[i][2] + (math.random() - 0.5) * 1e-6
+--    POINTS_TO_PROCESS[i][3] = POINTS_TO_PROCESS[i][3] + (math.random() - 0.5) * 1e-6
 --end
+
+local xn, zn = 50, 50
+for i = 1, xn do
+    for j = 1, zn do
+        local id = #POINTS_TO_PROCESS+1
+        local x, z = i + (math.random()-.5)*.2 -xn/2, j + (math.random()-.5)*.5 -zn/2
+        local ang = Vec3(0, math.pi/2, (x+z)/(xn+zn)*math.pi*2)
+        local function fun() return math.sin(x) + math.cos(z) - 5 end
+
+        local rot = getRotationMatrixZYX(ang)
+
+        local p = Vec3(x, fun(), z)
+        local n = Vec3(0, 1, 0)
+
+        p = MatMul3xVec3(rot, p)
+        n = MatMul3xVec3(rot, n)
+
+        POINTS_TO_PROCESS[id] = {p:unpack()}
+        POINTS_TO_PROCESS[id].normal = {n:unpack()}
+    end
+end
 
 math.randomseed(531015064916)
 ShuffleInPlace(POINTS_TO_PROCESS)
@@ -490,7 +491,9 @@ function onTick()
 
         ---------------------------------------------------------------------------------------------------------------
 
-
+        t1 = os.clock()
+        triangle_buffer = WorldToScreen_triangles(triangle_buffer)
+        print("compute time: "..(os.clock() - t1))
     end
 
 end
@@ -510,7 +513,7 @@ function onDraw()
         --    screen.drawCircleF(points_buffer[i][1], points_buffer[i][2], Clamp(10/d, 0.6, 10))
         --end
 
-        WorldToScreen_triangles(triangle_buffer)
+        local t1 = os.clock()
         for i = 1, #triangle_buffer do
             local tri = triangle_buffer[i][5]
 
@@ -522,6 +525,7 @@ function onDraw()
                 screen.drawTriangle(tri[1][1], tri[1][2], tri[2][1], tri[2][2], tri[3][1], tri[3][2])
             end
         end
+        print("draw time: "..(os.clock() - t1))
 
         screen.setColor(255,0,0)
         screen.drawText(0, 0, "Vertices: "..#triangulationManager.vertices)
