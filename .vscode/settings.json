@@ -47,6 +47,10 @@
         {
             "name": "LifeBoatAPI",
             "gitUrl": "https://github.com/nameouschangey/Stormworks_LifeBoatAPI_MC.git"
+        },
+        {
+            "name": "JumperLib",
+            "gitUrl": "https://github.com/Jumper-44/Stormworks_JumperLib.git"
         }
     ]
 }
