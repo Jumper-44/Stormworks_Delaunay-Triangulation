@@ -161,6 +161,7 @@ function onTick()
 
             vec_scale(cameraTranslation, -1, translationMatrix[4]) -- set translation in translationMatrix
 
+            -- cameraTransformMatrix = perspectiveProjectionMatrix * rotationMatrixZYX^T * translationMatrix
             matrix_mult(matrix_transpose(rotationMatrixZYX, tempMatrix1_4x4), translationMatrix, tempMatrix2_4x4)
             matrix_mult(perspectiveProjectionMatrix, tempMatrix2_4x4, cameraTransformMatrix)
         end
