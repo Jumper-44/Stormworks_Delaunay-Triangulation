@@ -88,48 +88,46 @@ end
 ---@param max_triangle_size_squared number
 ---@return triangulation2_5d
 function triangulation2_5d(max_triangle_size_squared)
-    local delta_mesh_change_id, delta_mesh_change_operation, v_x, v_y, v_z, v_near_triangle, t_v1, t_v2, t_v3, t_neighbor1, t_neighbor2, t_neighbor3, t_isChecked, t_isInvalid, t_isSurface, vertex_buffer, triangle_buffer, temp = queue(),queue(), {},{},{},{}, {},{},{},{},{},{},{},{},{}, {0,0,0,1}, {0,0,0,false,false,false,false,false,false}, {}
+    local delta_mesh_change_id, delta_mesh_change_operation, v_x, v_y, v_near_triangle, t_v1, t_v2, t_v3, t_neighbor1, t_neighbor2, t_neighbor3, t_isChecked, t_isInvalid, t_isSurface, vertex_buffer, triangle_buffer, temp = queue(),queue(), {},{},{}, {},{},{},{},{},{},{},{},{}, {0,0,0,1}, {0,0,0,false,false,false,false,false,false}, {}
     local vertices, vertices_kdtree, triangles, triangles_vertices, triangles_neighbors =
-        list({v_x, v_y, v_z, v_near_triangle}),
-        IKDTree(v_x, v_y, v_z),
+        list({v_x, v_y, {}, v_near_triangle}), -- x,y,z, near_triangle_reference
+        IKDTree(v_x, v_y),
         list({t_v1, t_v2, t_v3, t_neighbor1, t_neighbor2, t_neighbor3, t_isChecked, t_isInvalid, t_isSurface}),
         {t_v1, t_v2, t_v3},
         {t_neighbor1, t_neighbor2, t_neighbor3}
-    local add_vertex, add_triangle, in_circle, min_enclosing_circleradius_of_triangle -- functions
+
+    local add_vertex, add_triangle, in_circle, min_enclosing_circleradius_of_triangle,  pointID, new_triangle, ccw, current_boundary_neighbor, hash_index, shared_triangle, current_triangle, current_neighbor
 
     ---@param x number
     ---@param y number
     ---@param z number
-    ---@return integer
     function add_vertex(x, y, z)
         vertex_buffer[1] = x
         vertex_buffer[2] = y
         vertex_buffer[3] = z
-        local id = vertices.list_insert(vertex_buffer)
-        vertices_kdtree.IKDTree_insert(id)
-        return id
+        pointID = vertices.list_insert(vertex_buffer)
+        vertices_kdtree.IKDTree_insert(pointID)
     end
 
     ---@param v1 integer
     ---@param v2 integer
     ---@param v3 integer
-    ---@return integer
     function add_triangle(v1, v2, v3)
         -- checking sign of 2d determinant (2d cross or z-component of 3d cross), to set triangle orientation
         -- ac_x * bc_y - ac_y * bc_x < 0
-        local ccw = (v_x[v1] - v_x[v3]) * (v_y[v2] - v_y[v3]) - (v_y[v1] - v_y[v3]) * (v_x[v2] - v_x[v3]) < 0
+        ccw = (v_x[v1] - v_x[v3]) * (v_y[v2] - v_y[v3]) - (v_y[v1] - v_y[v3]) * (v_x[v2] - v_x[v3]) < 0
 
         triangle_buffer[1] = ccw and v1 or v2
         triangle_buffer[2] = ccw and v2 or v1
         triangle_buffer[3] = v3
-        return triangles.list_insert(triangle_buffer) -- returns given integer id to 'triangles'
+        new_triangle = triangles.list_insert(triangle_buffer) -- returns given integer id to 'triangles'
     end
 
     ---@param t integer
     ---@param p table {x, y}
     ---@return number
     function in_circle(t, p) -- https://www.cs.cmu.edu/afs/cs/project/quake/public/code/predicates.c     incirclefast
-        local adx, ady, bdx, bdy, cdx, cdy, abdet, bcdet, cadet, alift, blift, clift
+        local adx, ady, bdx, bdy, cdx, cdy  --, abdet, bcdet, cadet, alift, blift, clift
 
         adx = v_x[t_v1[t]] - p[1]
         ady = v_y[t_v1[t]] - p[2]
@@ -138,14 +136,15 @@ function triangulation2_5d(max_triangle_size_squared)
         cdx = v_x[t_v3[t]] - p[1]
         cdy = v_y[t_v3[t]] - p[2]
 
-        abdet = adx * bdy - bdx * ady
-        bcdet = bdx * cdy - cdx * bdy
-        cadet = cdx * ady - adx * cdy
-        alift = adx * adx + ady * ady
-        blift = bdx * bdx + bdy * bdy
-        clift = cdx * cdx + cdy * cdy
+        --abdet = adx * bdy - bdx * ady
+        --bcdet = bdx * cdy - cdx * bdy
+        --cadet = cdx * ady - adx * cdy
+        --alift = adx * adx + ady * ady
+        --blift = bdx * bdx + bdy * bdy
+        --clift = cdx * cdx + cdy * cdy
+        --return alift * bcdet + blift * cadet + clift * abdet
 
-        return alift * bcdet + blift * cadet + clift * abdet
+        return (adx * adx + ady * ady) * (bdx * cdy - cdx * bdy) + (bdx * bdx + bdy * bdy) * (cdx * ady - adx * cdy) + (cdx * cdx + cdy * cdy) * (adx * bdy - bdx * ady)
     end
 
     ---If the triangle is acute then the circumscribed circle is the smallest circle,
@@ -180,7 +179,7 @@ function triangulation2_5d(max_triangle_size_squared)
     add_vertex(-9E5, -9E5, 0)
     add_vertex(9E5, -9E5, 0)
     add_vertex(0,    9E5,  0)
-    add_triangle(1,2,3)
+    add_triangle(1, 2, 3)
 
     -- some variables used in insert function
     local triangle_check_queue, triangle_check_queue_pointer, triangle_check_queue_size,
@@ -208,7 +207,7 @@ function triangulation2_5d(max_triangle_size_squared)
 
         -- Do Bowyer-Watson Algorithm
         repeat -- Find all invalid triangles
-            local current_triangle = triangle_check_queue[triangle_check_queue_pointer]
+            current_triangle = triangle_check_queue[triangle_check_queue_pointer]
 
             if in_circle(current_triangle, point) < 1e-9 then -- Is current_triangle invalid? || Is point inside circumcircle of current_triangle?
                 t_isInvalid[current_triangle] = true
@@ -218,7 +217,7 @@ function triangulation2_5d(max_triangle_size_squared)
 
             if t_isInvalid[current_triangle] or invalid_triangles_size == 0 then -- If current_triangle is invalid OR no invalid triangles has been found yet then try add neighboring triangles of current_triangle to check queue
                 for i = 1, 3 do
-                    local current_neighbor = triangles_neighbors[i][current_triangle]
+                    current_neighbor = triangles_neighbors[i][current_triangle]
                     if current_neighbor and not t_isChecked[current_neighbor] then -- if neighbor exist and has not been checked yet then add to queue
                         triangle_check_queue_size = triangle_check_queue_size + 1
                         triangle_check_queue[triangle_check_queue_size] = current_neighbor
@@ -238,14 +237,14 @@ function triangulation2_5d(max_triangle_size_squared)
         -- Find the boundary edge of invalid_triangles
         edge_boundary_size = 0
         for i = 1, invalid_triangles_size do
-            local current_invalid_triangle = invalid_triangles[i]
+            current_triangle = invalid_triangles[i]
             for j = 1, 3 do
-                local current_neighbor = triangles_neighbors[j][current_invalid_triangle]
+                current_neighbor = triangles_neighbors[j][current_triangle]
                 if not current_neighbor or not t_isInvalid[current_neighbor] then -- If edge doesn't have neighbor OR if neighbor exist and it is not invalid then add as edge_boundary, else then the edge neighbor is an invalid triangle
                     edge_boundary_size = edge_boundary_size + 1
                     edge_boundary_neighbor[edge_boundary_size] = current_neighbor
-                    edge_boundary_v1[edge_boundary_size] = triangles_vertices[j % 3 + 1][current_invalid_triangle]
-                    edge_boundary_v2[edge_boundary_size] = triangles_vertices[(j+1) % 3 + 1][current_invalid_triangle]
+                    edge_boundary_v1[edge_boundary_size] = triangles_vertices[j % 3 + 1][current_triangle]
+                    edge_boundary_v2[edge_boundary_size] = triangles_vertices[(j+1) % 3 + 1][current_triangle]
                 end
             end
         end
@@ -257,19 +256,17 @@ function triangulation2_5d(max_triangle_size_squared)
             end
         end
 
-        local pointID, new_triangle, current_boundary_neighbor, t_v, hash_index, shared_triangle
-        pointID = add_vertex(point[1], point[2], point[3])
+        add_vertex(point[1], point[2], point[3]) -- assigned index to 'pointID'
 
         for i = 1, edge_boundary_size do -- Construct new triangles and setup/maintain neighboring triangle references
-            new_triangle = add_triangle(edge_boundary_v1[i], edge_boundary_v2[i], pointID)
+            add_triangle(edge_boundary_v1[i], edge_boundary_v2[i], pointID)  -- assigned index to 'new_triangle'
 
             -- Set neighbor to the edge_boundary_neighbor and its neighbor (if exist) to new_triangle
             current_boundary_neighbor = edge_boundary_neighbor[i]
             t_neighbor3[new_triangle] = current_boundary_neighbor
             if current_boundary_neighbor then -- if neighbor exist then find correct index to set neighbor reference to new_triangle
                 for j = 1, 3 do
-                    t_v = triangles_vertices[j]
-                    if not (t_v1[new_triangle] == t_v[current_boundary_neighbor] or t_v2[new_triangle] == t_v[current_boundary_neighbor]) then
+                    if not (t_v1[new_triangle] == triangles_vertices[j][current_boundary_neighbor] or t_v2[new_triangle] == triangles_vertices[j][current_boundary_neighbor]) then
                         triangles_neighbors[j][current_boundary_neighbor] = new_triangle
                         break
                     end
@@ -291,9 +288,7 @@ function triangulation2_5d(max_triangle_size_squared)
             end
 
             -- Test if triangle should be added to final mesh (Not part of Bowyer-Watson algorithm)
-            if t_v1[new_triangle] > 3 and t_v2[new_triangle] > 3 and t_v3[new_triangle] > 3 -- if vertices are not part of super-triangle
-                and min_enclosing_circleradius_of_triangle(new_triangle) < max_triangle_size_squared -- and triangle is smaller than max_triangle_size_squared
-            then
+            if min_enclosing_circleradius_of_triangle(new_triangle) < max_triangle_size_squared then              --t_v1[new_triangle] > 3 and t_v2[new_triangle] > 3 and t_v3[new_triangle] > 3 -- if vertices are not part of super-triangle
                 t_isSurface[new_triangle] = true
                 delta_mesh_change_id.queue_pushLeft(new_triangle)
                 delta_mesh_change_operation.queue_pushLeft(false) -- false == add
@@ -417,6 +412,11 @@ do
             local tv1, tv2, tv3 = triangulation_controller.DT_triangles[1], triangulation_controller.DT_triangles[2], triangulation_controller.DT_triangles[3]
             screen.setColor(k*k%255, k*4%255, 100)
             screen.drawTriangleF(vx[tv1[k]], vy[tv1[k]], vx[tv2[k]], vy[tv2[k]], vx[tv3[k]], vy[tv3[k]])
+        end
+
+        screen.setColor(255,255,255)
+        for i = 4, #triangulation_controller.DT_vertices[1] do
+            screen.drawCircleF(vx[i], vy[i], 0.6)
         end
     end
 end
