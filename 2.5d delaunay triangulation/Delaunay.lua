@@ -18,7 +18,8 @@ do
     ---@type Simulator -- Set properties and screen sizes here - will run once when the script is loaded
     simulator = simulator
     simulator:setScreen(1, "10x10")
-    simulator:setProperty("ExampleNumberProperty", 123)
+    simulator:setProperty("Max_T", 1000^2)
+    simulator:setProperty("Min_D", 0.1)
 
     local _isTouched = false
 
@@ -60,48 +61,51 @@ end
 --[====[ IN-GAME CODE ]====]
 
 
+
+
+
 require("JumperLib.DataStructures.JL_kdtree")
 require("JumperLib.DataStructures.JL_queue")
 
---#region Conversion
 -- Bitwise operations can only be done to integers, but also need to send the numbers as float when sending from script to script as Stormworks likes it that way.
-function int32_to_uint16(a, b) -- Takes 2 int32 and converts them to uint16 residing in a single number
-	return (('f'):unpack(('I'):pack( ((a&0xffff)<<16) | (b&0xffff)) ))
-end
+--function int32_to_uint16(a, b) -- Takes 2 int32 and converts them to uint16 residing in a single number
+--	return (('f'):unpack(('I'):pack( ((a&0xffff)<<16) | (b&0xffff)) ))
+--end
+--
+--local function uint16_to_int32(x) -- Takes a single number containing 2 uint16 and unpacks them.
+--	x = ('I'):unpack(('f'):pack(x))
+--	return x>>16, x&0xffff
+--end
 
---[[
-local function uint16_to_int32(x) -- Takes a single number containing 2 uint16 and unpacks them.
-	x = ('I'):unpack(('f'):pack(x))
-	return x>>16, x&0xffff
-end
---]]
---#endregion Conversion
 
 ---comment
 ---@class triangulation2_5d
 ---@field DT_vertices list
 ---@field DT_vertices_kdtree IKDTree
 ---@field DT_triangles list
----@field DT_delta_mesh_change_id queue
----@field DT_delta_mesh_change_operation queue
+---@field DT_delta_final_mesh_id queue
+---@field DT_delta_final_mesh_operation queue
 ---@field DT_insert fun(point: table)
 ---@param max_triangle_size_squared number
 ---@return triangulation2_5d
 function triangulation2_5d(max_triangle_size_squared)
-    local delta_mesh_change_id, delta_mesh_change_operation, v_x, v_y, v_near_triangle, t_v1, t_v2, t_v3, t_neighbor1, t_neighbor2, t_neighbor3, t_isChecked, t_isInvalid, t_isSurface, vertex_buffer, triangle_buffer, temp = queue(),queue(), {},{},{}, {},{},{},{},{},{},{},{},{}, {0,0,0,1}, {0,0,0,false,false,false,false,false,false}, {}
-    local vertices, vertices_kdtree, triangles, triangles_vertices, triangles_neighbors =
-        list({v_x, v_y, {}, v_near_triangle}), -- x,y,z, near_triangle_reference
-        IKDTree(v_x, v_y),
-        list({t_v1, t_v2, t_v3, t_neighbor1, t_neighbor2, t_neighbor3, t_isChecked, t_isInvalid, t_isSurface}),
-        {t_v1, t_v2, t_v3},
-        {t_neighbor1, t_neighbor2, t_neighbor3}
+    local delta_final_mesh_id, delta_final_mesh_operation, v_x, v_y, v_near_triangle, t_v1, t_v2, t_v3, t_neighbor1, t_neighbor2, t_neighbor3, t_isChecked, t_isInvalid, t_isSurface, vertex_buffer, triangle_buffer, temp = queue(),queue(), {},{},{}, {},{},{},{},{},{},{},{},{}, {0,0,0,1}, {0,0,0,false,false,false,false,false,false}, {}
+    local vertices, vertices_kdtree, triangles, triangles_vertices, triangles_neighbors,  triangle_check_queue, triangle_check_queue_pointer, triangle_check_queue_size,  invalid_triangles, invalid_triangles_size,  edge_boundary_neighbor, edge_boundary_v1, edge_boundary_v2, edge_boundary_size, edge_shared =
+        list({v_x, v_y, {}, v_near_triangle}), -- x,y,z, near_triangle_reference                                -- vertices
+        IKDTree(v_x, v_y),                                                                                      -- vertices_kdtree
+        list({t_v1, t_v2, t_v3, t_neighbor1, t_neighbor2, t_neighbor3, t_isChecked, t_isInvalid, t_isSurface}), -- triangles
+        {t_v1, t_v2, t_v3},                                                                                     -- triangles_vertices
+        {t_neighbor1, t_neighbor2, t_neighbor3},                                                                -- triangles_neighbors
+        {}, 0, 0,           -- triangle_check_queue, triangle_check_queue_pointer, triangle_check_queue_size
+        {}, 0,              -- invalid_triangles, invalid_triangles_size
+        {}, {}, {}, 0, {}   -- edge_boundary_neighbor, edge_boundary_v1, edge_boundary_v2, edge_boundary_size, edge_shared
 
-    local add_vertex, add_triangle, in_circle, min_enclosing_circleradius_of_triangle,  pointID, new_triangle, ccw, current_boundary_neighbor, hash_index, shared_triangle, current_triangle, current_neighbor
+    local add_vertex, add_triangle, in_circle, min_enclosing_circleradius_of_triangle,  pointID, new_triangle, ccw, current_boundary_neighbor, hash_index, shared_triangle, current_triangle, current_neighbor,  adx, ady, bdx, bdy, cdx, cdy,  abx, aby, bcx, bcy, cax, cay, ab, bc, ca, maxVal
 
     ---@param x number
     ---@param y number
     ---@param z number
-    function add_vertex(x, y, z)
+    function add_vertex(x, y, z) -- Insert new point in kd-tree and list
         vertex_buffer[1] = x
         vertex_buffer[2] = y
         vertex_buffer[3] = z
@@ -112,11 +116,8 @@ function triangulation2_5d(max_triangle_size_squared)
     ---@param v1 integer
     ---@param v2 integer
     ---@param v3 integer
-    function add_triangle(v1, v2, v3)
-        -- checking sign of 2d determinant (2d cross or z-component of 3d cross), to set triangle orientation
-        -- ac_x * bc_y - ac_y * bc_x < 0
-        ccw = (v_x[v1] - v_x[v3]) * (v_y[v2] - v_y[v3]) - (v_y[v1] - v_y[v3]) * (v_x[v2] - v_x[v3]) < 0
-
+    function add_triangle(v1, v2, v3) -- checking sign of 2d determinant to set triangle orientation and inserts triangle in list
+        ccw = (v_x[v1] - v_x[v3]) * (v_y[v2] - v_y[v3]) - (v_y[v1] - v_y[v3]) * (v_x[v2] - v_x[v3]) < 0 -- ac_x * bc_y - ac_y * bc_x < 0
         triangle_buffer[1] = ccw and v1 or v2
         triangle_buffer[2] = ccw and v2 or v1
         triangle_buffer[3] = v3
@@ -127,7 +128,7 @@ function triangulation2_5d(max_triangle_size_squared)
     ---@param p table {x, y}
     ---@return number
     function in_circle(t, p) -- https://www.cs.cmu.edu/afs/cs/project/quake/public/code/predicates.c     incirclefast
-        local adx, ady, bdx, bdy, cdx, cdy  --, abdet, bcdet, cadet, alift, blift, clift
+        -- local adx, ady, bdx, bdy, cdx, cdy  --, abdet, bcdet, cadet, alift, blift, clift
 
         adx = v_x[t_v1[t]] - p[1]
         ady = v_y[t_v1[t]] - p[2]
@@ -153,7 +154,7 @@ function triangulation2_5d(max_triangle_size_squared)
     ---@param tri integer
     ---@return number radius_squared
     function min_enclosing_circleradius_of_triangle(tri)
-        local abx, aby, bcx, bcy, cax, cay, ab, bc, ca, maxVal
+        -- local abx, aby, bcx, bcy, cax, cay, ab, bc, ca, maxVal
         abx = v_x[t_v2[tri]] - v_x[t_v1[tri]]
         aby = v_y[t_v2[tri]] - v_y[t_v1[tri]]
         bcx = v_x[t_v3[tri]] - v_x[t_v2[tri]]
@@ -171,30 +172,23 @@ function triangulation2_5d(max_triangle_size_squared)
         temp[3] = ca
         maxVal = (ab >= bc and ab >= ca) and 1 or (bc >= ab and bc >= ca) and 2 or 3
 
-        return (temp[maxVal] > temp[maxVal%3+1] + temp[(maxVal+1)%3+1]) and (temp[maxVal] / 4)   -- if triangle is obtuse (c² > a² + b²), in which 'c' is the longest side, then r² = c²/4
-            or (ab*bc*ca / (2*(ab*(bc + ca) + bc*ca) -ab*ab -bc*bc -ca*ca))                         -- Circumradius:  r = a*b*c / sqrt((a+b+c) * (-a+b+c) * (a-b+c) * (a+b-c))    ->    r² = a²b²c² / (2(a²(b² + c²) + b²c²) -a^4 -b^4 -c^4)
+        return (temp[maxVal] > temp[maxVal%3+1] + temp[(maxVal+1)%3+1]) and (temp[maxVal] / 4)  -- if triangle is obtuse (c² > a² + b²), in which 'c' is the longest side, then r² = c²/4
+            or (ab*bc*ca / (2*(ab*(bc + ca) + bc*ca) -ab*ab -bc*bc -ca*ca))                     -- Circumradius:  r = a*b*c / sqrt((a+b+c) * (-a+b+c) * (a-b+c) * (a+b-c))    ->    r² = a²b²c² / (2(a²(b² + c²) + b²c²) -a^4 -b^4 -c^4)
     end
 
     -- init super-triangle
     add_vertex(-9E5, -9E5, 0)
-    add_vertex(9E5, -9E5, 0)
-    add_vertex(0,    9E5,  0)
+    add_vertex(9E5,  -9E5, 0)
+    add_vertex(0,     9E5, 0)
     add_triangle(1, 2, 3)
 
-    -- some variables used in insert function
-    local triangle_check_queue, triangle_check_queue_pointer, triangle_check_queue_size,
-      invalid_triangles, invalid_triangles_size,
-      edge_boundary_neighbor, edge_boundary_v1, edge_boundary_v2, edge_boundary_size, edge_shared =
-        {}, 0, 0,
-        {}, 0,
-        {}, {}, {}, 0, {}
 
     return {
     DT_vertices = vertices;
     DT_vertices_kdtree = vertices_kdtree;
     DT_triangles = triangles;
-    DT_delta_mesh_change_id = delta_mesh_change_id;
-    DT_delta_mesh_change_operation = delta_mesh_change_operation;
+    DT_delta_final_mesh_id = delta_final_mesh_id;
+    DT_delta_final_mesh_operation = delta_final_mesh_operation;
 
     ---@param point table {x, y, z}
     DT_insert = function(point)
@@ -251,8 +245,8 @@ function triangulation2_5d(max_triangle_size_squared)
 
         for i = 1, invalid_triangles_size do -- Queue invalid_triangles for removal in final mesh if part of said mesh, i.e. if isSurface. (Not part of Bowyer-Watson algorithm)
             if t_isSurface[invalid_triangles[i]] then
-                delta_mesh_change_id.queue_pushLeft(invalid_triangles[i])
-                delta_mesh_change_operation.queue_pushLeft(true) -- true == remove
+                delta_final_mesh_id.queue_pushLeft(invalid_triangles[i])
+                delta_final_mesh_operation.queue_pushLeft(true) -- true == remove
             end
         end
 
@@ -273,8 +267,7 @@ function triangulation2_5d(max_triangle_size_squared)
                 end
             end
 
-            -- Setup neighboring between new triangles
-            for j = 1, 2 do
+            for j = 1, 2 do -- Setup neighboring between new triangles
                 hash_index = triangles_vertices[j][new_triangle]
                 shared_triangle = edge_shared[hash_index]
                 if shared_triangle then
@@ -290,8 +283,8 @@ function triangulation2_5d(max_triangle_size_squared)
             -- Test if triangle should be added to final mesh (Not part of Bowyer-Watson algorithm)
             if min_enclosing_circleradius_of_triangle(new_triangle) < max_triangle_size_squared then              --t_v1[new_triangle] > 3 and t_v2[new_triangle] > 3 and t_v3[new_triangle] > 3 -- if vertices are not part of super-triangle
                 t_isSurface[new_triangle] = true
-                delta_mesh_change_id.queue_pushLeft(new_triangle)
-                delta_mesh_change_operation.queue_pushLeft(false) -- false == add
+                delta_final_mesh_id.queue_pushLeft(new_triangle)
+                delta_final_mesh_operation.queue_pushLeft(false) -- false == add
             end
         end
         v_near_triangle[pointID] = new_triangle -- Set near triangle reference to new inserted point
@@ -299,79 +292,66 @@ function triangulation2_5d(max_triangle_size_squared)
 } end
 
 
+local max_triangle_size_squared, point_min_density_squared = property.getNumber("Max_T"), property.getNumber("Min_D")
+local triangulation_controller, pointBuffer = triangulation2_5d(max_triangle_size_squared), {0,0,0}
+local delta_amount, t1_id, t2_id, DT_triangles, DT_delta_final_mesh_id, isBoth
+function onTick()
+    renderOn = input.getBool(1)
+    clear = input.getBool(2)
+    output.setBool(1, renderOn)
+    output.setBool(2, clear)
 
---local triangulation_controller, pointBuffer = triangulation2_5d(1e5), {}
---
---function onTick()
---    --#region Get & pass though
---
---    -- Get & Pass through renderOn & clear
---    renderOn = input.getBool(1)
---    clear = input.getBool(2)
---    output.setBool(1, renderOn)
---    output.setBool(2, clear)
---
---    -- Get & Pass through laserPos
---    point = {input.getNumber(17), input.getNumber(18), input.getNumber(19)}
---    for i = 1, 3 do output.setNumber(i+16, point[i]) end
---
---    -- Pass though cameratransform
---    for i = 1, 16 do output.setNumber(i, input.getNumber(i)) end
---
---    -- Pass though color alpha
---    output.setNumber(20, input.getNumber(20))
---
---    --#endregion Get & pass though
---
---
---    if clear then
---        delaunay = triangulation2_5d(1e5)
---    end
---
---
---    if renderOn then
---
---        if point[1] ~= 0 and point[2] ~= 0 then
---            delaunay.vertices[#delaunay.vertices + 1] = Point( point[1], point[2], point[3] )
---            delaunay.triangulate()
---        end
---
---        for i = 0, 3 do
---            local id = #delaunay.delta_mesh_change
---
---            if id > 0 then
---                if id == 1 then
---                    for j = 1, 3 do
---                        output.setNumber(20 + i*3 + j, int32_to_uint16(delaunay.delta_mesh_change[id][1][j].id, 0))
---                    end
---                    output.setBool(i*2 + 3, delaunay.delta_mesh_change[id][2])
---                    delaunay.delta_mesh_change[id] = nil
---                else
---                    for j = 1, 3 do
---                        output.setNumber(20 + i*3 + j, int32_to_uint16(delaunay.delta_mesh_change[id][1][j].id, delaunay.delta_mesh_change[id-1][1][j].id))
---                    end
---                    output.setBool(i*2 + 3, delaunay.delta_mesh_change[id][2])
---                    output.setBool(i*2 + 4, delaunay.delta_mesh_change[id-1][2])
---                    delaunay.delta_mesh_change[id] = nil
---                    delaunay.delta_mesh_change[id-1] = nil
---                end
---            else
---                -- Clear the rest of the triangle output when #delaunay.delta_mesh_change is 0
---                for j = 21 + i*3, 32 do output.setNumber(j, 0) end
---                break
---            end
---        end
---    end
---end
+    pointBuffer[1], pointBuffer[1], pointBuffer[1] = input.getNumber(17), input.getNumber(18), input.getNumber(19) -- Get point
+    for i = 17, 20 do output.setNumber(i, input.getNumber(i)) end -- Passthrough: point[17,19], colorAlpha[20]
+
+    if clear then
+        triangulation_controller = triangulation2_5d(max_triangle_size_squared)
+    end
+
+    if pointBuffer[1] ~= 0 and pointBuffer[2] ~= 0
+        and triangulation_controller.DT_vertices_kdtree.pointsLen2[triangulation_controller.DT_vertices_kdtree.IKDTree_nearestNeighbors(pointBuffer, 1)[1]] > point_min_density_squared
+    then
+        triangulation_controller.DT_insert(pointBuffer)
+    end
+
+    DT_triangles = triangulation_controller.DT_triangles
+    DT_delta_final_mesh_id = triangulation_controller.DT_delta_final_mesh_id
+    for i = 0, 3 do
+        delta_amount = DT_delta_final_mesh_id.last - DT_delta_final_mesh_id.first + 1     --inline DT_delta_final_mesh_id.queue_size() function to reduce char
+        if delta_amount > 0 then
+            t1_id = DT_delta_final_mesh_id.queue_popRight()
+            DT_triangles.list_remove(t1_id) -- make old triangle data able to be overwritten
+            isBoth = delta_amount > 1
+
+            if isBoth then
+                t2_id = DT_delta_final_mesh_id.queue_popRight()
+                DT_triangles.list_remove(t2_id) -- make old triangle data able to be overwritten
+            end
+
+            for j = 1, 3 do
+                output.setNumber(20 + i*3 + j, (('f'):unpack(('I'):pack( ((DT_triangles[j][t1_id]&0xffff)<<16) | ((isBoth and DT_triangles[j][t2_id] or 0)&0xffff)) )))                --inlined int32_to_uint16(DT_triangles[j][t1_id], isBoth and DT_triangles[j][t2_id] or 0)
+            end
+            for j = 3, isBoth and 4 or 3 do
+                output.setBool(i*2 + j, triangulation_controller.DT_delta_final_mesh_operation.queue_popRight())
+            end
+
+        else -- Clear the rest of the triangle output when 'delta_amount' is 0
+            for j = 21 + i*3, 32 do
+                output.setNumber(j, 0)
+            end
+            break
+        end
+    end
+end
 
 
 
 
 
 ---@section __DEBUG__
---run in VSCode with F6
-do
-    local triangulation_controller = triangulation2_5d(20^2)
+-- [[
+do -- run in VSCode with F6 and press/hold right click to place point(s) to triangulate
+    local triangulation_controller = triangulation2_5d(25^2)
     local pointBuffer = {0,0,0}
     local triangleMeshID = {}
 
@@ -381,13 +361,13 @@ do
         pointBuffer[2] = touchY
 
         if togglePress or true then
-            if triangulation_controller.DT_vertices_kdtree.pointsLen2[triangulation_controller.DT_vertices_kdtree.IKDTree_nearestNeighbors(pointBuffer, 1)[1]] > 10 then
+            if triangulation_controller.DT_vertices_kdtree.pointsLen2[ triangulation_controller.DT_vertices_kdtree.IKDTree_nearestNeighbors(pointBuffer, 1)[1] ] > 10 then
                 triangulation_controller.DT_insert(pointBuffer)
 
-                local queue_size = triangulation_controller.DT_delta_mesh_change_id.queue_size()
+                local queue_size = triangulation_controller.DT_delta_final_mesh_id.queue_size()
                 for i = 1, queue_size do
-                    local triangleID = triangulation_controller.DT_delta_mesh_change_id.queue_popRight()
-                    if triangulation_controller.DT_delta_mesh_change_operation.queue_popRight() then
+                    local triangleID = triangulation_controller.DT_delta_final_mesh_id.queue_popRight()
+                    if triangulation_controller.DT_delta_final_mesh_operation.queue_popRight() then
                         triangleMeshID[triangleID] = nil -- rem from final mesh
                         triangulation_controller.DT_triangles.list_remove(triangleID) -- make old triangle data able to be overwritten
                     else
@@ -397,7 +377,7 @@ do
 
                 --for k in pairs(triangleMeshID) do --debug
                 --    for i = 4, 6 do
-                --        if triangulation_controller.triangles[8][triangulation_controller.triangles[i][k]] then
+                --        if triangulation_controller.triangles[8][ triangulation_controller.triangles[i][k] ] then
                 --            error("Triangles have reference to invalid triangles")
                 --        end
                 --    end
@@ -411,7 +391,7 @@ do
         for k in pairs(triangleMeshID) do
             local tv1, tv2, tv3 = triangulation_controller.DT_triangles[1], triangulation_controller.DT_triangles[2], triangulation_controller.DT_triangles[3]
             screen.setColor(k*k%255, k*4%255, 100)
-            screen.drawTriangleF(vx[tv1[k]], vy[tv1[k]], vx[tv2[k]], vy[tv2[k]], vx[tv3[k]], vy[tv3[k]])
+            screen.drawTriangleF(vx[tv1[k] ], vy[tv1[k] ], vx[tv2[k] ], vy[tv2[k] ], vx[tv3[k] ], vy[tv3[k] ])
         end
 
         screen.setColor(255,255,255)
@@ -420,4 +400,5 @@ do
         end
     end
 end
+--]]
 ---@endsection
