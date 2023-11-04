@@ -17,7 +17,7 @@
 do
     ---@type Simulator -- Set properties and screen sizes here - will run once when the script is loaded
     simulator = simulator
-    simulator:setScreen(1, "9x5")
+    simulator:setScreen(1, "10x10")
     simulator:setProperty("ExampleNumberProperty", 123)
 
     local _isTouched = false
@@ -38,9 +38,11 @@ do
         if screenConnection.isTouched and screenConnection.isTouched ~= _isTouched then
             simulator:setInputNumber(11, screenConnection.touchX)
             simulator:setInputNumber(12, screenConnection.touchY)
+            simulator:setInputBool(11, true)
         else
             simulator:setInputNumber(11, 0)
             simulator:setInputNumber(12, 0)
+            simulator:setInputBool(11, false)
         end
         _isTouched = screenConnection.isTouched
 
@@ -58,20 +60,12 @@ end
 --[====[ IN-GAME CODE ]====]
 
 
-
-
-
---#region readme
---[[
-Recieves laserPos from "CameraTransform.lua" script
-
-This does the delaunay triangulation
---]]
---#endregion readme
+require("JumperLib.DataStructures.JL_kdtree")
+require("JumperLib.DataStructures.JL_queue")
 
 --#region Conversion
 -- Bitwise operations can only be done to integers, but also need to send the numbers as float when sending from script to script as Stormworks likes it that way.
-local function int32_to_uint16(a, b) -- Takes 2 int32 and converts them to uint16 residing in a single number
+function int32_to_uint16(a, b) -- Takes 2 int32 and converts them to uint16 residing in a single number
 	return (('f'):unpack(('I'):pack( ((a&0xffff)<<16) | (b&0xffff)) ))
 end
 
@@ -83,330 +77,347 @@ end
 --]]
 --#endregion Conversion
 
---#region vec3
-local Vec3 = function(x,y,z) return {x=x, y=y, z=z} end
+---comment
+---@class triangulation2_5d
+---@field DT_vertices list
+---@field DT_vertices_kdtree IKDTree
+---@field DT_triangles list
+---@field DT_delta_mesh_change_id queue
+---@field DT_delta_mesh_change_operation queue
+---@field DT_insert fun(point: table)
+---@param max_triangle_size_squared number
+---@return triangulation2_5d
+function triangulation2_5d(max_triangle_size_squared)
+    local delta_mesh_change_id, delta_mesh_change_operation, v_x, v_y, v_z, v_near_triangle, t_v1, t_v2, t_v3, t_neighbor1, t_neighbor2, t_neighbor3, t_isChecked, t_isInvalid, t_isSurface, vertex_buffer, triangle_buffer, temp = queue(),queue(), {},{},{},{}, {},{},{},{},{},{},{},{},{}, {0,0,0,1}, {0,0,0,false,false,false,false,false,false}, {}
+    local vertices, vertices_kdtree, triangles, triangles_vertices, triangles_neighbors =
+        list({v_x, v_y, v_z, v_near_triangle}),
+        IKDTree(v_x, v_y, v_z),
+        list({t_v1, t_v2, t_v3, t_neighbor1, t_neighbor2, t_neighbor3, t_isChecked, t_isInvalid, t_isSurface}),
+        {t_v1, t_v2, t_v3},
+        {t_neighbor1, t_neighbor2, t_neighbor3}
+    local add_vertex, add_triangle, in_circle, min_enclosing_circleradius_of_triangle -- functions
 
-local Add, Sub, Scale, Dot, Cross =
-    function(a,b) return Vec3(a.x+b.x, a.y+b.y, a.z+b.z) end,
-    function(a,b) return Vec3(a.x-b.x, a.y-b.y, a.z-b.z) end,
-    function(a,b) return Vec3(a.x*b, a.y*b, a.z*b) end,
-    function(a,b) return a.x*b.x + a.y*b.y + a.z*b.z end,
-    function(a,b) return Vec3(a.y*b.z-a.z*b.y, a.z*b.x-a.x*b.z, a.x*b.y-a.y*b.x) end
+    ---@param x number
+    ---@param y number
+    ---@param z number
+    ---@return integer
+    function add_vertex(x, y, z)
+        vertex_buffer[1] = x
+        vertex_buffer[2] = y
+        vertex_buffer[3] = z
+        local id = vertices.list_insert(vertex_buffer)
+        vertices_kdtree.IKDTree_insert(id)
+        return id
+    end
 
-local Len = function(a) return Dot(a,a)^.5 end
-local Normalize = function(a) return Scale(a, 1/Len(a)) end
---#endregion vec3
+    ---@param v1 integer
+    ---@param v2 integer
+    ---@param v3 integer
+    ---@return integer
+    function add_triangle(v1, v2, v3)
+        -- checking sign of 2d determinant (2d cross or z-component of 3d cross), to set triangle orientation
+        -- ac_x * bc_y - ac_y * bc_x < 0
+        local ccw = (v_x[v1] - v_x[v3]) * (v_y[v2] - v_y[v3]) - (v_y[v1] - v_y[v3]) * (v_x[v2] - v_x[v3]) < 0
 
---#region QuadTree
-local Quad = function(centerX, centerY, size) return {
-        centerX = centerX,
-        centerY = centerY,
-        size = size,
-        quadrant = {}
-} end
+        triangle_buffer[1] = ccw and v1 or v2
+        triangle_buffer[2] = ccw and v2 or v1
+        triangle_buffer[3] = v3
+        return triangles.list_insert(triangle_buffer) -- returns given integer id to 'triangles'
+    end
 
--- Specifically for triangles(3 point AABB) in which none overlaps(2.5d triangle mesh). No duplicates in tree.
-local QuadTree = function(centerX, centerY, size) return {
-    tree = Quad(centerX, centerY, size);
+    ---@param t integer
+    ---@param p table {x, y}
+    ---@return number
+    function in_circle(t, p) -- https://www.cs.cmu.edu/afs/cs/project/quake/public/code/predicates.c     incirclefast
+        local adx, ady, bdx, bdy, cdx, cdy, abdet, bcdet, cadet, alift, blift, clift
 
-    -- Example: quadTree:insert(quadTree.tree, triangle)
-    insert = function(self, root, triangle)
-        local x_positive, y_positive, rootSize = 0, 0, root.size
+        adx = v_x[t_v1[t]] - p[1]
+        ady = v_y[t_v1[t]] - p[2]
+        bdx = v_x[t_v2[t]] - p[1]
+        bdy = v_y[t_v2[t]] - p[2]
+        cdx = v_x[t_v3[t]] - p[1]
+        cdy = v_y[t_v3[t]] - p[2]
 
-        -- Checking boundary for each vertex
-        for i = 1, 3 do
-            if triangle[i].x >= root.centerX then x_positive = x_positive + 1 end
-            if triangle[i].y >= root.centerY then y_positive = y_positive + 1 end
-        end
+        abdet = adx * bdy - bdx * ady
+        bcdet = bdx * cdy - cdx * bdy
+        cadet = cdx * ady - adx * cdy
+        alift = adx * adx + ady * ady
+        blift = bdx * bdx + bdy * bdy
+        clift = cdx * cdx + cdy * cdy
 
-        -- if x|y_positive%3 is not 0 then the triangle is overlapping with other quadrants
-        if x_positive%3 == 0 and y_positive%3 == 0 and rootSize > 20 then
-            local quadrant = (y_positive==3 and 1 or 3) + (x_positive==y_positive and 0 or 1)
+        return alift * bcdet + blift * cadet + clift * abdet
+    end
 
-            if root.quadrant[quadrant] then
-                self:insert(root.quadrant[quadrant], triangle)
-            else
-                root.quadrant[quadrant] = Quad(
-                    root.centerX + (x_positive==3 and rootSize or -rootSize),
-                    root.centerY + (y_positive==3 and rootSize or -rootSize),
-                    rootSize*0.5
-                )
-                self:insert(root.quadrant[quadrant], triangle)
-            end
+    ---If the triangle is acute then the circumscribed circle is the smallest circle,
+    ---else if the triangle is obtuse, then it is the circle enclosing the 2 opposite vertices of the obtuse angle,
+    ---in which the obtuse angled vertex is enclosed too.
+    ---@param tri integer
+    ---@return number radius_squared
+    function min_enclosing_circleradius_of_triangle(tri)
+        local abx, aby, bcx, bcy, cax, cay, ab, bc, ca, maxVal
+        abx = v_x[t_v2[tri]] - v_x[t_v1[tri]]
+        aby = v_y[t_v2[tri]] - v_y[t_v1[tri]]
+        bcx = v_x[t_v3[tri]] - v_x[t_v2[tri]]
+        bcy = v_y[t_v3[tri]] - v_y[t_v2[tri]]
+        cax = v_x[t_v1[tri]] - v_x[t_v3[tri]]
+        cay = v_y[t_v1[tri]] - v_y[t_v3[tri]]
 
-        else
-            -- Triangle get a reference to the root it lies in and adds it to said root
-            triangle.root = root
-            root[#root + 1] = triangle
-        end
-    end;
+        -- triangle side lengths squared
+        ab = abx*abx + aby*aby
+        bc = bcx*bcx + bcy*bcy
+        ca = cax*cax + cay*cay
 
-    -- Finds the first triangle in which the point lies within the circumcircle and returns reference to triangle
-    search = function(self, root, point)
-        for i = 1, #root do
-            local dx, dy =
-                root[i].circle.x - point.x,
-                root[i].circle.y - point.y
+        temp[1] = ab
+        temp[2] = bc
+        temp[3] = ca
+        maxVal = (ab >= bc and ab >= ca) and 1 or (bc >= ab and bc >= ca) and 2 or 3
 
-            if dx * dx + dy * dy <= root[i].circle.r then
-                return root[i]
-            end
-        end
+        return (temp[maxVal] > temp[maxVal%3+1] + temp[(maxVal+1)%3+1]) and (temp[maxVal] / 4)   -- if triangle is obtuse (c² > a² + b²), in which 'c' is the longest side, then r² = c²/4
+            or (ab*bc*ca / (2*(ab*(bc + ca) + bc*ca) -ab*ab -bc*bc -ca*ca))                         -- Circumradius:  r = a*b*c / sqrt((a+b+c) * (-a+b+c) * (a-b+c) * (a+b-c))    ->    r² = a²b²c² / (2(a²(b² + c²) + b²c²) -a^4 -b^4 -c^4)
+    end
 
-        local quadrant = (point.y>=root.centerY and 1 or 3) + ((point.x>=root.centerX)==(point.y>=root.centerY) and 0 or 1)
+    -- init super-triangle
+    add_vertex(-9E5, -9E5, 0)
+    add_vertex(9E5, -9E5, 0)
+    add_vertex(0,    9E5,  0)
+    add_triangle(1,2,3)
 
-        if root.quadrant[quadrant] then
-           return self:search(root.quadrant[quadrant], point)
-        end
-    end;
-
-    -- The root the triangle lies in and the triangle itself
-    remove = function(root, triangle)
-        for i = 1, #root do
-            if root[i] == triangle then
-                table.remove(root, i)
-                break
-            end
-        end
-    end;
-} end
---#endregion QuadTree
-
---#region Delaunay
-local GetCircumCircle = function(a,b,c)
-    local dx_ab, dy_ab, dx_ac, dy_ac =
-        b.x - a.x,
-        b.y - a.y,
-        c.x - a.x,
-        c.y - a.y
-
-    local b_len_squared, c_len_squared, d =
-        dx_ab * dx_ab + dy_ab * dy_ab,
-        dx_ac * dx_ac + dy_ac * dy_ac,
-        0.5 / (dx_ab * dy_ac - dy_ab * dx_ac)
-
-    local dx,dy =
-        (dy_ac * b_len_squared - dy_ab * c_len_squared) * d,
-        (dx_ab * c_len_squared - dx_ac * b_len_squared) * d
-
-    return {
-        x = a.x + dx,
-        y = a.y + dy,
-        r = dx*dx + dy*dy -- r squared
-    }
-end
-
--- Point Class
-local Point = function(x,y,z,id) return {
-    x=x; y=y; z=z or 0; id=id or 0
-} end
-
--- Triangle Class
-local Triangle = function(p1,p2,p3, n1,n2,n3)
-    local normal = Normalize( Cross(Sub(p1,p2), Sub(p2,p3)) )
-    local CCW = normal.z < 0
-
-return {
-    p1;
-    CCW and p2 or p3;
-    CCW and p3 or p2;
-    circle = GetCircumCircle(p1,p2,p3);
-    neighbor = {n1,n2,n3};
---  root = nil;
-} end
-
-local Delaunay = function(centerX, centerY, size)
-    local vertices, actions_log, quadTree =
-        {n_vertices = 0},
-        {},
-        QuadTree(centerX, centerY, size)
-
-    quadTree:insert(quadTree.tree, Triangle(Point(-9E5,-9E5), Point(9E5,-9E5), Point(0,9E5), false,false,false))
+    -- some variables used in insert function
+    local triangle_check_queue, triangle_check_queue_pointer, triangle_check_queue_size,
+      invalid_triangles, invalid_triangles_size,
+      edge_boundary_neighbor, edge_boundary_v1, edge_boundary_v2, edge_boundary_size, edge_shared =
+        {}, 0, 0,
+        {}, 0,
+        {}, {}, {}, 0, {}
 
     return {
-    vertices = vertices;
-    actions_log = actions_log; -- Don't care about triangles if any of the vertices is from the super triangle
-    quadTree = quadTree;
+    DT_vertices = vertices;
+    DT_vertices_kdtree = vertices_kdtree;
+    DT_triangles = triangles;
+    DT_delta_mesh_change_id = delta_mesh_change_id;
+    DT_delta_mesh_change_operation = delta_mesh_change_operation;
 
-    triangulate = function()
-        local end_pos = #vertices
+    ---@param point table {x, y, z}
+    DT_insert = function(point)
+        triangle_check_queue[1] = v_near_triangle[vertices_kdtree.IKDTree_nearestNeighbors(point, 1)[1]]
+        t_isChecked[triangle_check_queue[1]] = true
+        triangle_check_queue_pointer = 1
+        triangle_check_queue_size = 1
 
-        for i = end_pos-(end_pos - vertices.n_vertices) + 1, end_pos do
-            local currentVertex = vertices[i]
-            local new_triangles, triangle_check_queue, id = {}, {quadTree:search(quadTree.tree, currentVertex)}, 1
+        invalid_triangles_size = 0
 
-            currentVertex.id = i
+        -- Do Bowyer-Watson Algorithm
+        repeat -- Find all invalid triangles
+            local current_triangle = triangle_check_queue[triangle_check_queue_pointer]
 
-            -- Depends on CCW winding order for the triangles.
-            while id > 0 do
-                local currentTriangle = triangle_check_queue[id]
+            if in_circle(current_triangle, point) < 1e-9 then -- Is current_triangle invalid? || Is point inside circumcircle of current_triangle?
+                t_isInvalid[current_triangle] = true
+                invalid_triangles_size = invalid_triangles_size + 1
+                invalid_triangles[invalid_triangles_size] = current_triangle
+            end
 
+            if t_isInvalid[current_triangle] or invalid_triangles_size == 0 then -- If current_triangle is invalid OR no invalid triangles has been found yet then try add neighboring triangles of current_triangle to check queue
+                for i = 1, 3 do
+                    local current_neighbor = triangles_neighbors[i][current_triangle]
+                    if current_neighbor and not t_isChecked[current_neighbor] then -- if neighbor exist and has not been checked yet then add to queue
+                        triangle_check_queue_size = triangle_check_queue_size + 1
+                        triangle_check_queue[triangle_check_queue_size] = current_neighbor
+                        t_isChecked[current_neighbor] = true
+                    end
+                end
+            end
+
+            triangle_check_queue_pointer = triangle_check_queue_pointer + 1
+        until triangle_check_queue_size < triangle_check_queue_pointer
+
+        for i = 1, triangle_check_queue_size do -- reset isChecked state for checked triangles
+            t_isChecked[triangle_check_queue[i]] = false
+        end
+
+        -- Now the invalid_triangles makes up a polygon (new point is assumed to be within super-triangle. No check for it, which would just be if invalid_triangles_size == 0)
+        -- Find the boundary edge of invalid_triangles
+        edge_boundary_size = 0
+        for i = 1, invalid_triangles_size do
+            local current_invalid_triangle = invalid_triangles[i]
+            for j = 1, 3 do
+                local current_neighbor = triangles_neighbors[j][current_invalid_triangle]
+                if not current_neighbor or not t_isInvalid[current_neighbor] then -- If edge doesn't have neighbor OR if neighbor exist and it is not invalid then add as edge_boundary, else then the edge neighbor is an invalid triangle
+                    edge_boundary_size = edge_boundary_size + 1
+                    edge_boundary_neighbor[edge_boundary_size] = current_neighbor
+                    edge_boundary_v1[edge_boundary_size] = triangles_vertices[j % 3 + 1][current_invalid_triangle]
+                    edge_boundary_v2[edge_boundary_size] = triangles_vertices[(j+1) % 3 + 1][current_invalid_triangle]
+                end
+            end
+        end
+
+        for i = 1, invalid_triangles_size do -- Queue invalid_triangles for removal in final mesh if part of said mesh, i.e. if isSurface. (Not part of Bowyer-Watson algorithm)
+            if t_isSurface[invalid_triangles[i]] then
+                delta_mesh_change_id.queue_pushLeft(invalid_triangles[i])
+                delta_mesh_change_operation.queue_pushLeft(true) -- true == remove
+            end
+        end
+
+        local pointID, new_triangle, current_boundary_neighbor, t_v, hash_index, shared_triangle
+        pointID = add_vertex(point[1], point[2], point[3])
+
+        for i = 1, edge_boundary_size do -- Construct new triangles and setup/maintain neighboring triangle references
+            new_triangle = add_triangle(edge_boundary_v1[i], edge_boundary_v2[i], pointID)
+
+            -- Set neighbor to the edge_boundary_neighbor and its neighbor (if exist) to new_triangle
+            current_boundary_neighbor = edge_boundary_neighbor[i]
+            t_neighbor3[new_triangle] = current_boundary_neighbor
+            if current_boundary_neighbor then -- if neighbor exist then find correct index to set neighbor reference to new_triangle
                 for j = 1, 3 do
-                    local currentNeighbor = currentTriangle.neighbor[j]
-
-                    if currentNeighbor then
-                        local dx,dy =
-                            currentNeighbor.circle.x - currentVertex.x,
-                            currentNeighbor.circle.y - currentVertex.y
-
-                        if dx * dx + dy * dy <= currentNeighbor.circle.r then
-                            for k = 1, 3 do
-                                -- If neighboring triangle don't have a reference to current, then the neigboring triangle has already been checked, and won't be added to queue again
-                                if currentTriangle == currentNeighbor.neighbor[k] then
-                                    triangle_check_queue[#triangle_check_queue + 1] = currentNeighbor
-                                    currentNeighbor.neighbor[k] = nil
-                                    break
-                                end
-                            end
-                        else
-                            local new_triangle = Triangle(
-                                currentVertex,
-                                currentTriangle[j],
-                                currentTriangle[j%3 + 1],
-
-                                nil, currentNeighbor
-                            )
-
-                            new_triangles[#new_triangles + 1] = new_triangle
-                            if new_triangle[1].id ~= 0 and new_triangle[2].id ~= 0 and new_triangle[3].id ~= 0 then
-                                table.insert(actions_log, 1, {new_triangle, true})
-                            end
-
-                            for k = 1, 3 do
-                                if currentTriangle == currentNeighbor.neighbor[k] then
-                                    currentNeighbor.neighbor[k] = new_triangle
-                                    break
-                                end
-                            end
-                        end
-                    elseif currentNeighbor == false then
-                        local new_triangle = Triangle(
-                            currentVertex,
-                            currentTriangle[j],
-                            currentTriangle[j%3 + 1],
-
-                            nil, false
-                        )
-
-                        new_triangles[#new_triangles + 1] = new_triangle
-                        if new_triangle[1].id ~= 0 and new_triangle[2].id ~= 0 and new_triangle[3].id ~= 0 then
-                            table.insert(actions_log, 1, {new_triangle, true})
-                        end
-                    end
-
-                    -- Removes reference to other tables/triangles, so garbagecollection can collect (Not sure if neccecary for GB)
-                    -- Also currently the same triangle can be added to the queue more than one time, so it only process its neighbor once.
-                    currentTriangle.neighbor[j] = nil
-                end
-
-                -- Remove triangle from quadTree and queue and update 'id'
-                quadTree.remove(currentTriangle.root, currentTriangle)
-
-                if currentTriangle[1].id ~= 0 and currentTriangle[2].id ~= 0 and currentTriangle[3].id ~= 0 then
-                    table.insert(actions_log, 1, {currentTriangle, false})
-                end
-
-                table.remove(triangle_check_queue, id)
-                id = #triangle_check_queue
-            end
-
-
-            -- Adding references to new neighboring triangles
-            -- Comparing every triangle to every other triangle in 'new_triangles',
-            -- in which to only compare a to b, and not a to b && b to a, then a for loop is arranged that does so,
-            -- but the way it is structured then the last index of 'new_triangles' will not be added to the quadtree, so adding the last index right here.
-            quadTree:insert(quadTree.tree, new_triangles[#new_triangles])
-
-            for j = 1, #new_triangles - 1 do
-                local currentTri = new_triangles[j]
-                quadTree:insert(quadTree.tree, currentTri)
-
-                for k = j + 1, #new_triangles do
-                    local otherTri = new_triangles[k]
-
-                    if currentTri[2] == otherTri[3] then
-                        currentTri.neighbor[1] = otherTri
-                        otherTri.neighbor[3] = currentTri
-                    elseif currentTri[3] == otherTri[2] then
-                        currentTri.neighbor[3] = otherTri
-                        otherTri.neighbor[1] = currentTri
+                    t_v = triangles_vertices[j]
+                    if not (t_v1[new_triangle] == t_v[current_boundary_neighbor] or t_v2[new_triangle] == t_v[current_boundary_neighbor]) then
+                        triangles_neighbors[j][current_boundary_neighbor] = new_triangle
+                        break
                     end
                 end
             end
 
+            -- Setup neighboring between new triangles
+            for j = 1, 2 do
+                hash_index = triangles_vertices[j][new_triangle]
+                shared_triangle = edge_shared[hash_index]
+                if shared_triangle then
+                    triangles_neighbors[j%2+1][new_triangle] = shared_triangle
+                    triangles_neighbors[j][shared_triangle] = new_triangle
+                    edge_shared[hash_index] = nil -- clear index so table hash can be reused next new point insertion
+                else
+                    edge_shared[hash_index] = new_triangle
+                    v_near_triangle[hash_index] = new_triangle -- Update near triangle reference of vertex
+                end
+            end
+
+            -- Test if triangle should be added to final mesh (Not part of Bowyer-Watson algorithm)
+            if t_v1[new_triangle] > 3 and t_v2[new_triangle] > 3 and t_v3[new_triangle] > 3 -- if vertices are not part of super-triangle
+                and min_enclosing_circleradius_of_triangle(new_triangle) < max_triangle_size_squared -- and triangle is smaller than max_triangle_size_squared
+            then
+                t_isSurface[new_triangle] = true
+                delta_mesh_change_id.queue_pushLeft(new_triangle)
+                delta_mesh_change_operation.queue_pushLeft(false) -- false == add
+            end
         end
-
-        vertices.n_vertices = end_pos
+        v_near_triangle[pointID] = new_triangle -- Set near triangle reference to new inserted point
     end
 } end
---#endregion Delaunay
 
 
---#region init
-local delaunay, point =
-    Delaunay(0,0, 1E5),
-    {}
---#endregion init
 
-function onTick()
-    --#region Get & pass though
+--local triangulation_controller, pointBuffer = triangulation2_5d(1e5), {}
+--
+--function onTick()
+--    --#region Get & pass though
+--
+--    -- Get & Pass through renderOn & clear
+--    renderOn = input.getBool(1)
+--    clear = input.getBool(2)
+--    output.setBool(1, renderOn)
+--    output.setBool(2, clear)
+--
+--    -- Get & Pass through laserPos
+--    point = {input.getNumber(17), input.getNumber(18), input.getNumber(19)}
+--    for i = 1, 3 do output.setNumber(i+16, point[i]) end
+--
+--    -- Pass though cameratransform
+--    for i = 1, 16 do output.setNumber(i, input.getNumber(i)) end
+--
+--    -- Pass though color alpha
+--    output.setNumber(20, input.getNumber(20))
+--
+--    --#endregion Get & pass though
+--
+--
+--    if clear then
+--        delaunay = triangulation2_5d(1e5)
+--    end
+--
+--
+--    if renderOn then
+--
+--        if point[1] ~= 0 and point[2] ~= 0 then
+--            delaunay.vertices[#delaunay.vertices + 1] = Point( point[1], point[2], point[3] )
+--            delaunay.triangulate()
+--        end
+--
+--        for i = 0, 3 do
+--            local id = #delaunay.delta_mesh_change
+--
+--            if id > 0 then
+--                if id == 1 then
+--                    for j = 1, 3 do
+--                        output.setNumber(20 + i*3 + j, int32_to_uint16(delaunay.delta_mesh_change[id][1][j].id, 0))
+--                    end
+--                    output.setBool(i*2 + 3, delaunay.delta_mesh_change[id][2])
+--                    delaunay.delta_mesh_change[id] = nil
+--                else
+--                    for j = 1, 3 do
+--                        output.setNumber(20 + i*3 + j, int32_to_uint16(delaunay.delta_mesh_change[id][1][j].id, delaunay.delta_mesh_change[id-1][1][j].id))
+--                    end
+--                    output.setBool(i*2 + 3, delaunay.delta_mesh_change[id][2])
+--                    output.setBool(i*2 + 4, delaunay.delta_mesh_change[id-1][2])
+--                    delaunay.delta_mesh_change[id] = nil
+--                    delaunay.delta_mesh_change[id-1] = nil
+--                end
+--            else
+--                -- Clear the rest of the triangle output when #delaunay.delta_mesh_change is 0
+--                for j = 21 + i*3, 32 do output.setNumber(j, 0) end
+--                break
+--            end
+--        end
+--    end
+--end
 
-    -- Get & Pass through renderOn & clear
-    renderOn = input.getBool(1)
-    clear = input.getBool(2)
-    output.setBool(1, renderOn)
-    output.setBool(2, clear)
-
-    -- Get & Pass through laserPos
-    point = {input.getNumber(17), input.getNumber(18), input.getNumber(19)}
-    for i = 1, 3 do output.setNumber(i+16, point[i]) end
-
-    -- Pass though cameratransform
-    for i = 1, 16 do output.setNumber(i, input.getNumber(i)) end
-
-    -- Pass though color alpha
-    output.setNumber(20, input.getNumber(20))
-
-    --#endregion Get & pass though
 
 
-    if clear then
-        -- Probably memory leak, can't garbagecollect tables that references each other(?)
-        delaunay = Delaunay(0,0, 1E5)
+
+
+---@section __DEBUG__
+--run in VSCode with F6
+do
+    local triangulation_controller = triangulation2_5d(20^2)
+    local pointBuffer = {0,0,0}
+    local triangleMeshID = {}
+
+    function onTick()
+        local touchX, touchY, togglePress = input.getNumber(3), input.getNumber(4), input.getBool(11)
+        pointBuffer[1] = touchX
+        pointBuffer[2] = touchY
+
+        if togglePress or true then
+            if triangulation_controller.DT_vertices_kdtree.pointsLen2[triangulation_controller.DT_vertices_kdtree.IKDTree_nearestNeighbors(pointBuffer, 1)[1]] > 10 then
+                triangulation_controller.DT_insert(pointBuffer)
+
+                local queue_size = triangulation_controller.DT_delta_mesh_change_id.queue_size()
+                for i = 1, queue_size do
+                    local triangleID = triangulation_controller.DT_delta_mesh_change_id.queue_popRight()
+                    if triangulation_controller.DT_delta_mesh_change_operation.queue_popRight() then
+                        triangleMeshID[triangleID] = nil -- rem from final mesh
+                        triangulation_controller.DT_triangles.list_remove(triangleID) -- make old triangle data able to be overwritten
+                    else
+                        triangleMeshID[triangleID] = true -- add
+                    end
+                end
+
+                --for k in pairs(triangleMeshID) do --debug
+                --    for i = 4, 6 do
+                --        if triangulation_controller.triangles[8][triangulation_controller.triangles[i][k]] then
+                --            error("Triangles have reference to invalid triangles")
+                --        end
+                --    end
+                --end
+            end
+        end
     end
 
-
-    if renderOn then
-
-        if point[1] ~= 0 and point[2] ~= 0 then
-            delaunay.vertices[#delaunay.vertices + 1] = Point( point[1], point[2], point[3] )
-            delaunay.triangulate()
-        end
-
-        for i = 0, 3 do
-            local id = #delaunay.actions_log
-
-            if id > 0 then
-                if id == 1 then
-                    for j = 1, 3 do
-                        output.setNumber(20 + i*3 + j, int32_to_uint16(delaunay.actions_log[id][1][j].id, 0))
-                    end
-                    output.setBool(i*2 + 3, delaunay.actions_log[id][2])
-                    delaunay.actions_log[id] = nil
-                else
-                    for j = 1, 3 do
-                        output.setNumber(20 + i*3 + j, int32_to_uint16(delaunay.actions_log[id][1][j].id, delaunay.actions_log[id-1][1][j].id))
-                    end
-                    output.setBool(i*2 + 3, delaunay.actions_log[id][2])
-                    output.setBool(i*2 + 4, delaunay.actions_log[id-1][2])
-                    delaunay.actions_log[id] = nil
-                    delaunay.actions_log[id-1] = nil
-                end
-            else
-                -- Clear the rest of the triangle output when #delaunay.actions_log is 0
-                for j = 21 + i*3, 32 do output.setNumber(j, 0) end
-                break
-            end
+    function onDraw()
+        local vx, vy = triangulation_controller.DT_vertices[1], triangulation_controller.DT_vertices[2]
+        for k in pairs(triangleMeshID) do
+            local tv1, tv2, tv3 = triangulation_controller.DT_triangles[1], triangulation_controller.DT_triangles[2], triangulation_controller.DT_triangles[3]
+            screen.setColor(k*k%255, k*4%255, 100)
+            screen.drawTriangleF(vx[tv1[k]], vy[tv1[k]], vx[tv2[k]], vy[tv2[k]], vx[tv3[k]], vy[tv3[k]])
         end
     end
 end
+---@endsection
