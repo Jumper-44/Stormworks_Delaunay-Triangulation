@@ -100,13 +100,12 @@ OFFSET.tick = property.getNumber("tick")/60
 
 function onTick()
     isRendering = input.getBool(1)
-    output.setBool(1, isRendering)
 
     -- Passthrough composite
     for i = 17, 32 do
         output.setNumber(i, input.getNumber(i))
     end
-    for i = 3, 32 do
+    for i = 1, 32 do
         output.setBool(i, input.getBool(i))
     end
 

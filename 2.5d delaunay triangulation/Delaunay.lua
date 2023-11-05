@@ -293,16 +293,17 @@ function triangulation2_5d(max_triangle_size_squared)
 
 
 local max_triangle_size_squared, point_min_density_squared = property.getNumber("Max_T"), property.getNumber("Min_D")
-local triangulation_controller, pointBuffer = triangulation2_5d(max_triangle_size_squared), {0,0,0}
+local triangulation_controller, pointBuffer = triangulation2_5d(max_triangle_size_squared), {}
 local delta_amount, t1_id, t2_id, DT_triangles, DT_delta_final_mesh_id, isBoth
 function onTick()
     renderOn = input.getBool(1)
     clear = input.getBool(2)
-    output.setBool(1, renderOn)
-    output.setBool(2, clear)
 
-    pointBuffer[1], pointBuffer[1], pointBuffer[1] = input.getNumber(17), input.getNumber(18), input.getNumber(19) -- Get point
-    for i = 17, 20 do output.setNumber(i, input.getNumber(i)) end -- Passthrough: point[17,19], colorAlpha[20]
+    for i = 1, 3 do
+        pointBuffer[i] = input.getNumber(i) -- Get point
+        output.setNumber(i+17, 0) -- clear point passthrough
+        output.setBool(i, input.getBool(i)) -- Passthrough: renderOn, isFemale, clear
+    end
 
     if clear then
         triangulation_controller = triangulation2_5d(max_triangle_size_squared)
@@ -312,6 +313,9 @@ function onTick()
         and triangulation_controller.DT_vertices_kdtree.pointsLen2[triangulation_controller.DT_vertices_kdtree.IKDTree_nearestNeighbors(pointBuffer, 1)[1]] > point_min_density_squared
     then
         triangulation_controller.DT_insert(pointBuffer)
+        for i = 1, 3 do
+            output.setNumber(i+17, pointBuffer[i]) -- Passthrough: point[18,20]
+        end
     end
 
     DT_triangles = triangulation_controller.DT_triangles
@@ -331,7 +335,7 @@ function onTick()
             for j = 1, 3 do
                 output.setNumber(20 + i*3 + j, (('f'):unpack(('I'):pack( ((DT_triangles[j][t1_id]&0xffff)<<16) | ((isBoth and DT_triangles[j][t2_id] or 0)&0xffff)) )))                --inlined int32_to_uint16(DT_triangles[j][t1_id], isBoth and DT_triangles[j][t2_id] or 0)
             end
-            for j = 3, isBoth and 4 or 3 do
+            for j = 4, isBoth and 5 or 4 do
                 output.setBool(i*2 + j, triangulation_controller.DT_delta_final_mesh_operation.queue_popRight())
             end
 
