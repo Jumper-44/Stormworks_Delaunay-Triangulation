@@ -124,18 +124,20 @@ function triangulation2_5d(max_triangle_size_squared)
         new_triangle = triangles.list_insert(triangle_buffer) -- returns given integer id to 'triangles'
     end
 
-    ---@param t integer
+    ---@param v1 integer
+    ---@param v2 integer
+    ---@param v3 integer
     ---@param p table {x, y}
     ---@return number
-    function in_circle(t, p) -- https://www.cs.cmu.edu/afs/cs/project/quake/public/code/predicates.c     incirclefast
+    function in_circle(v1, v2, v3, p) -- https://www.cs.cmu.edu/afs/cs/project/quake/public/code/predicates.c     incirclefast
         -- local adx, ady, bdx, bdy, cdx, cdy  --, abdet, bcdet, cadet, alift, blift, clift
 
-        adx = v_x[t_v1[t]] - p[1]
-        ady = v_y[t_v1[t]] - p[2]
-        bdx = v_x[t_v2[t]] - p[1]
-        bdy = v_y[t_v2[t]] - p[2]
-        cdx = v_x[t_v3[t]] - p[1]
-        cdy = v_y[t_v3[t]] - p[2]
+        adx = v_x[v1] - p[1]
+        ady = v_y[v1] - p[2]
+        bdx = v_x[v2] - p[1]
+        bdy = v_y[v2] - p[2]
+        cdx = v_x[v3] - p[1]
+        cdy = v_y[v3] - p[2]
 
         --abdet = adx * bdy - bdx * ady
         --bcdet = bdx * cdy - cdx * bdy
@@ -151,16 +153,18 @@ function triangulation2_5d(max_triangle_size_squared)
     ---If the triangle is acute then the circumscribed circle is the smallest circle,
     ---else if the triangle is obtuse, then it is the circle enclosing the 2 opposite vertices of the obtuse angle,
     ---in which the obtuse angled vertex is enclosed too.
-    ---@param tri integer
+    ---@param v1 integer
+    ---@param v2 integer
+    ---@param v3 integer
     ---@return number radius_squared
-    function min_enclosing_circleradius_of_triangle(tri)
+    function min_enclosing_circleradius_of_triangle(v1, v2, v3)
         -- local abx, aby, bcx, bcy, cax, cay, ab, bc, ca, maxVal
-        abx = v_x[t_v2[tri]] - v_x[t_v1[tri]]
-        aby = v_y[t_v2[tri]] - v_y[t_v1[tri]]
-        bcx = v_x[t_v3[tri]] - v_x[t_v2[tri]]
-        bcy = v_y[t_v3[tri]] - v_y[t_v2[tri]]
-        cax = v_x[t_v1[tri]] - v_x[t_v3[tri]]
-        cay = v_y[t_v1[tri]] - v_y[t_v3[tri]]
+        abx = v_x[v2] - v_x[v1]
+        aby = v_y[v2] - v_y[v1]
+        bcx = v_x[v3] - v_x[v2]
+        bcy = v_y[v3] - v_y[v2]
+        cax = v_x[v1] - v_x[v3]
+        cay = v_y[v1] - v_y[v3]
 
         -- triangle side lengths squared
         ab = abx*abx + aby*aby
@@ -203,7 +207,7 @@ function triangulation2_5d(max_triangle_size_squared)
         repeat -- Find all invalid triangles
             current_triangle = triangle_check_queue[triangle_check_queue_pointer]
 
-            if in_circle(current_triangle, point) < 1e-9 then -- Is current_triangle invalid? || Is point inside circumcircle of current_triangle?
+            if in_circle(t_v1[current_triangle], t_v2[current_triangle], t_v3[current_triangle], point) < 1e-9 then -- Is current_triangle invalid? || Is point inside circumcircle of current_triangle?
                 t_isInvalid[current_triangle] = true
                 invalid_triangles_size = invalid_triangles_size + 1
                 invalid_triangles[invalid_triangles_size] = current_triangle
@@ -281,7 +285,7 @@ function triangulation2_5d(max_triangle_size_squared)
             end
 
             -- Test if triangle should be added to final mesh (Not part of Bowyer-Watson algorithm)
-            if min_enclosing_circleradius_of_triangle(new_triangle) < max_triangle_size_squared then              --t_v1[new_triangle] > 3 and t_v2[new_triangle] > 3 and t_v3[new_triangle] > 3 -- if vertices are not part of super-triangle
+            if min_enclosing_circleradius_of_triangle(t_v1[new_triangle], t_v2[new_triangle], t_v3[new_triangle]) < max_triangle_size_squared then              --t_v1[new_triangle] > 3 and t_v2[new_triangle] > 3 and t_v3[new_triangle] > 3 -- if vertices are not part of super-triangle
                 t_isSurface[new_triangle] = true
                 delta_final_mesh_id.queue_pushLeft(new_triangle)
                 delta_final_mesh_operation.queue_pushLeft(false) -- false == add
@@ -318,6 +322,9 @@ function onTick()
             end
         end
     end
+
+
+
 
     DT_triangles = triangulation_controller.DT_triangles
     DT_delta_final_mesh_id = triangulation_controller.DT_delta_final_mesh_id
