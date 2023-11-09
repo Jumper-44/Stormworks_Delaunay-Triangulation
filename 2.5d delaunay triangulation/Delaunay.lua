@@ -192,7 +192,7 @@ function triangulation2_5d(max_triangle_size_squared)
 
     ---@param point table {x, y, z}
     DT_insert = function(point)
-        triangle_check_queue[1] = v_near_triangle[vertices_kdtree.IKDTree_nearestNeighbors(point, 1)[1]]
+        triangle_check_queue[1] = v_near_triangle[vertices_kdtree.IKDTree_nearestNeighbor(point)]
         t_isChecked[triangle_check_queue[1]] = true
         triangle_check_queue_pointer = 1
         triangle_check_queue_size = 1
@@ -309,12 +309,13 @@ function onTick()
         triangulation_controller = triangulation2_5d(max_triangle_size_squared)
     end
 
-    if pointBuffer[1] ~= 0 and pointBuffer[2] ~= 0
-        and triangulation_controller.DT_vertices_kdtree.pointsLen2[triangulation_controller.DT_vertices_kdtree.IKDTree_nearestNeighbors(pointBuffer, 1)[1]] > point_min_density_squared
-    then
-        triangulation_controller.DT_insert(pointBuffer)
-        for i = 1, 3 do
-            output.setNumber(i+17, pointBuffer[i]) -- Passthrough: point[18,20]
+    if pointBuffer[1] ~= 0 and pointBuffer[2] ~= 0 then
+        local _, dist = triangulation_controller.DT_vertices_kdtree.IKDTree_nearestNeighbor(pointBuffer)
+        if dist > point_min_density_squared then
+            triangulation_controller.DT_insert(pointBuffer)
+            for i = 1, 3 do
+                output.setNumber(i+17, pointBuffer[i]) -- Passthrough: point[18,20]
+            end
         end
     end
 
@@ -365,7 +366,8 @@ do -- run in VSCode with F6 and press/hold right click to place point(s) to tria
         pointBuffer[2] = touchY
 
         if togglePress or true then
-            if triangulation_controller.DT_vertices_kdtree.pointsLen2[ triangulation_controller.DT_vertices_kdtree.IKDTree_nearestNeighbors(pointBuffer, 1)[1] ] > 10 then
+            local _, dist = triangulation_controller.DT_vertices_kdtree.IKDTree_nearestNeighbor(pointBuffer)
+            if dist > 10 then
                 triangulation_controller.DT_insert(pointBuffer)
 
                 local queue_size = triangulation_controller.DT_delta_final_mesh_id.queue_size()
