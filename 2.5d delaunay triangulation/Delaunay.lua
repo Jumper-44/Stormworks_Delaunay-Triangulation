@@ -68,9 +68,9 @@ require("JumperLib.DataStructures.JL_kdtree")
 require("JumperLib.DataStructures.JL_queue")
 
 -- Bitwise operations can only be done to integers, but also need to send the numbers as float when sending from script to script as Stormworks likes it that way.
---function int32_to_uint16(a, b) -- Takes 2 int32 and converts them to uint16 residing in a single number
---	return (('f'):unpack(('I'):pack( ((a&0xffff)<<16) | (b&0xffff)) ))
---end
+function int32_to_uint16(a, b) -- Takes 2 int32 and converts them to uint16 residing in a single number
+	return (('f'):unpack(('I'):pack( ((a&0xffff)<<16) | (b&0xffff)) ))
+end
 --
 --local function uint16_to_int32(x) -- Takes a single number containing 2 uint16 and unpacks them.
 --	x = ('I'):unpack(('f'):pack(x))
@@ -83,13 +83,13 @@ require("JumperLib.DataStructures.JL_queue")
 ---@field DT_vertices list
 ---@field DT_vertices_kdtree IKDTree
 ---@field DT_triangles list
----@field DT_delta_final_mesh_id queue
----@field DT_delta_final_mesh_operation queue
+---@field DT_delta_final_mesh_triangle_id queue
+---@field DT_delta_final_mesh_batch queue
 ---@field DT_insert fun(point: table)
 ---@param max_triangle_size_squared number
 ---@return triangulation2_5d
 function triangulation2_5d(max_triangle_size_squared)
-    local delta_final_mesh_id, delta_final_mesh_operation, v_x, v_y, v_near_triangle, t_v1, t_v2, t_v3, t_neighbor1, t_neighbor2, t_neighbor3, t_isChecked, t_isInvalid, t_isSurface, vertex_buffer, triangle_buffer, temp = queue(),queue(), {},{},{}, {},{},{},{},{},{},{},{},{}, {0,0,0,1}, {0,0,0,false,false,false,false,false,false}, {}
+    local delta_final_mesh_triangle_id, delta_final_mesh_batch, v_x, v_y, v_near_triangle, t_v1, t_v2, t_v3, t_neighbor1, t_neighbor2, t_neighbor3, t_isChecked, t_isInvalid, t_isSurface, vertex_buffer, triangle_buffer, temp = queue(),queue(), {},{},{}, {},{},{},{},{},{},{},{},{}, {0,0,0,1}, {0,0,0,false,false,false,false,false,false}, {}
     local vertices, vertices_kdtree, triangles, triangles_vertices, triangles_neighbors,  triangle_check_queue, triangle_check_queue_pointer, triangle_check_queue_size,  invalid_triangles, invalid_triangles_size,  edge_boundary_neighbor, edge_boundary_v1, edge_boundary_v2, edge_boundary_size, edge_shared =
         list({v_x, v_y, {}, v_near_triangle}), -- x,y,z, near_triangle_reference                                -- vertices
         IKDTree(v_x, v_y),                                                                                      -- vertices_kdtree
@@ -100,7 +100,7 @@ function triangulation2_5d(max_triangle_size_squared)
         {}, 0,              -- invalid_triangles, invalid_triangles_size
         {}, {}, {}, 0, {}   -- edge_boundary_neighbor, edge_boundary_v1, edge_boundary_v2, edge_boundary_size, edge_shared
 
-    local add_vertex, add_triangle, in_circle, min_enclosing_circleradius_of_triangle,  pointID, new_triangle, ccw, current_boundary_neighbor, hash_index, shared_triangle, current_triangle, current_neighbor,  adx, ady, bdx, bdy, cdx, cdy,  abx, aby, bcx, bcy, cax, cay, ab, bc, ca, maxVal
+    local add_vertex, add_triangle, in_circle, min_enclosing_circleradius_of_triangle,  pointID, new_triangle, ccw, current_boundary_neighbor, hash_index, shared_triangle, current_triangle, current_neighbor,  adx, ady, bdx, bdy, cdx, cdy,  abx, aby, bcx, bcy, cax, cay, ab, bc, ca, maxVal,  batch_amount
 
     ---@param x number
     ---@param y number
@@ -191,8 +191,8 @@ function triangulation2_5d(max_triangle_size_squared)
     DT_vertices = vertices;
     DT_vertices_kdtree = vertices_kdtree;
     DT_triangles = triangles;
-    DT_delta_final_mesh_id = delta_final_mesh_id;
-    DT_delta_final_mesh_operation = delta_final_mesh_operation;
+    DT_delta_final_mesh_triangle_id = delta_final_mesh_triangle_id;
+    DT_delta_final_mesh_batch = delta_final_mesh_batch;
 
     ---@param point table {x, y, z}
     DT_insert = function(point)
@@ -231,7 +231,7 @@ function triangulation2_5d(max_triangle_size_squared)
             t_isChecked[triangle_check_queue[i]] = false
         end
 
-        -- Now the invalid_triangles makes up a polygon (new point is assumed to be within super-triangle. No check for it, which would just be if invalid_triangles_size == 0)
+        -- Now the invalid_triangles makes up a polygon (new point is assumed to be within super-triangle)
         -- Find the boundary edge of invalid_triangles
         edge_boundary_size = 0
         for i = 1, invalid_triangles_size do
@@ -247,15 +247,17 @@ function triangulation2_5d(max_triangle_size_squared)
             end
         end
 
+        batch_amount = 0
         for i = 1, invalid_triangles_size do -- Queue invalid_triangles for removal in final mesh if part of said mesh, i.e. if isSurface. (Not part of Bowyer-Watson algorithm)
             if t_isSurface[invalid_triangles[i]] then
-                delta_final_mesh_id.queue_pushLeft(invalid_triangles[i])
-                delta_final_mesh_operation.queue_pushLeft(true) -- true == remove
+                delta_final_mesh_triangle_id.queue_pushLeft(invalid_triangles[i])
+                batch_amount = batch_amount + 1
             end
         end
+        delta_final_mesh_batch.queue_pushLeft(batch_amount)
 
+        batch_amount = 0
         add_vertex(point[1], point[2], point[3]) -- assigned index to 'pointID'
-
         for i = 1, edge_boundary_size do -- Construct new triangles and setup/maintain neighboring triangle references
             add_triangle(edge_boundary_v1[i], edge_boundary_v2[i], pointID)  -- assigned index to 'new_triangle'
 
@@ -287,10 +289,11 @@ function triangulation2_5d(max_triangle_size_squared)
             -- Test if triangle should be added to final mesh (Not part of Bowyer-Watson algorithm)
             if min_enclosing_circleradius_of_triangle(t_v1[new_triangle], t_v2[new_triangle], t_v3[new_triangle]) < max_triangle_size_squared then              --t_v1[new_triangle] > 3 and t_v2[new_triangle] > 3 and t_v3[new_triangle] > 3 -- if vertices are not part of super-triangle
                 t_isSurface[new_triangle] = true
-                delta_final_mesh_id.queue_pushLeft(new_triangle)
-                delta_final_mesh_operation.queue_pushLeft(false) -- false == add
+                delta_final_mesh_triangle_id.queue_pushLeft(new_triangle)
+                batch_amount = batch_amount + 1
             end
         end
+        delta_final_mesh_batch.queue_pushLeft(batch_amount)
         v_near_triangle[pointID] = new_triangle -- Set near triangle reference to new inserted point
     end
 } end
@@ -298,15 +301,15 @@ function triangulation2_5d(max_triangle_size_squared)
 
 local max_triangle_size_squared, point_min_density_squared = property.getNumber("Max_T"), property.getNumber("Min_D")
 local triangulation_controller, pointBuffer = triangulation2_5d(max_triangle_size_squared), {}
-local delta_amount, t1_id, t2_id, DT_triangles, DT_delta_final_mesh_id, isBoth
+local delta_amount, t1_id, t2_id, DT_triangles, DT_delta_final_mesh_triangle_id, isBoth
 function onTick()
     renderOn = input.getBool(1)
     clear = input.getBool(2)
 
     for i = 1, 3 do
-        pointBuffer[i] = input.getNumber(i) -- Get point
-        output.setNumber(i+17, 0) -- clear point passthrough
         output.setBool(i, input.getBool(i)) -- Passthrough: renderOn, isFemale, clear
+        --pointBuffer[i] = input.getNumber(i) -- Get point
+        --output.setNumber(i+17, 0) -- clear point passthrough
     end
 
     if clear then
@@ -323,37 +326,44 @@ function onTick()
         end
     end
 
+    -- TODO : Make code to compress triangle add/rem sequence as well as point coordinates and send to next script.
+    -- Use uint16 and send 2 indices/IDs in a single number.
+    -- The 3rd triangle vertex will always be the same for the same add batch sequence. Use 1 32bit number to contain 1 or 2 sequence of add batch 3rd vertex. Use bool channel for add/rem
+    -- Needs to send point coordinates. Try make buffer of points to send...
+    -- Available composite channels:
+    --      16 32bit numbers in range [17..32]
+    --      21 booleans in range [4..24]
 
 
-
-    DT_triangles = triangulation_controller.DT_triangles
-    DT_delta_final_mesh_id = triangulation_controller.DT_delta_final_mesh_id
-    for i = 0, 3 do
-        delta_amount = DT_delta_final_mesh_id.last - DT_delta_final_mesh_id.first + 1     --inline DT_delta_final_mesh_id.queue_size() function to reduce char
-        if delta_amount > 0 then
-            t1_id = DT_delta_final_mesh_id.queue_popRight()
-            DT_triangles.list_remove(t1_id) -- make old triangle data able to be overwritten
-            isBoth = delta_amount > 1
-
-            if isBoth then
-                t2_id = DT_delta_final_mesh_id.queue_popRight()
-                DT_triangles.list_remove(t2_id) -- make old triangle data able to be overwritten
-            end
-
-            for j = 1, 3 do
-                output.setNumber(20 + i*3 + j, (('f'):unpack(('I'):pack( ((DT_triangles[j][t1_id]&0xffff)<<16) | ((isBoth and DT_triangles[j][t2_id] or 0)&0xffff)) )))                --inlined int32_to_uint16(DT_triangles[j][t1_id], isBoth and DT_triangles[j][t2_id] or 0)
-            end
-            for j = 4, isBoth and 5 or 4 do
-                output.setBool(i*2 + j, triangulation_controller.DT_delta_final_mesh_operation.queue_popRight())
-            end
-
-        else -- Clear the rest of the triangle output when 'delta_amount' is 0
-            for j = 21 + i*3, 32 do
-                output.setNumber(j, 0)
-            end
-            break
-        end
-    end
+    -- old send sequence
+--    DT_triangles = triangulation_controller.DT_triangles
+--    DT_delta_final_mesh_triangle_id = triangulation_controller.DT_delta_final_mesh_triangle_id
+--    for i = 0, 3 do
+--        delta_amount = DT_delta_final_mesh_triangle_id.last - DT_delta_final_mesh_triangle_id.first + 1     --inline DT_delta_final_mesh_triangle_id.queue_size() function to reduce char
+--        if delta_amount > 0 then
+--            t1_id = DT_delta_final_mesh_triangle_id.queue_popRight()
+--            DT_triangles.list_remove(t1_id) -- make old triangle data able to be overwritten
+--            isBoth = delta_amount > 1
+--
+--            if isBoth then
+--                t2_id = DT_delta_final_mesh_triangle_id.queue_popRight()
+--                DT_triangles.list_remove(t2_id) -- make old triangle data able to be overwritten
+--            end
+--
+--            for j = 1, 3 do
+--                output.setNumber(20 + i*3 + j, (('f'):unpack(('I'):pack( ((DT_triangles[j][t1_id]&0xffff)<<16) | ((isBoth and DT_triangles[j][t2_id] or 0)&0xffff)) )))                --inlined int32_to_uint16(DT_triangles[j][t1_id], isBoth and DT_triangles[j][t2_id] or 0)
+--            end
+--            for j = 4, isBoth and 5 or 4 do
+--                output.setBool(i*2 + j, triangulation_controller.DT_delta_final_mesh_batch.queue_popRight())
+--            end
+--
+--        else -- Clear the rest of the triangle output when 'delta_amount' is 0
+--            for j = 21 + i*3, 32 do
+--                output.setNumber(j, 0)
+--            end
+--            break
+--        end
+--    end
 end
 
 
@@ -366,6 +376,7 @@ do -- run in VSCode with F6 and press/hold right click to place point(s) to tria
     local triangulation_controller = triangulation2_5d(25^2)
     local pointBuffer = {0,0,0}
     local triangleMeshID = {}
+    local batch_sequence = true;
 
     function onTick()
         local touchX, touchY, togglePress = input.getNumber(3), input.getNumber(4), input.getBool(11)
@@ -374,18 +385,22 @@ do -- run in VSCode with F6 and press/hold right click to place point(s) to tria
 
         if togglePress or true then
             local _, dist = triangulation_controller.DT_vertices_kdtree.IKDTree_nearestNeighbor(pointBuffer)
-            if dist > 10 then
+            if dist > 4 then
                 triangulation_controller.DT_insert(pointBuffer)
 
-                local queue_size = triangulation_controller.DT_delta_final_mesh_id.queue_size()
-                for i = 1, queue_size do
-                    local triangleID = triangulation_controller.DT_delta_final_mesh_id.queue_popRight()
-                    if triangulation_controller.DT_delta_final_mesh_operation.queue_popRight() then
-                        triangleMeshID[triangleID] = nil -- rem from final mesh
-                        triangulation_controller.DT_triangles.list_remove(triangleID) -- make old triangle data able to be overwritten
-                    else
-                        triangleMeshID[triangleID] = true -- add
+                for i = 1, triangulation_controller.DT_delta_final_mesh_batch.queue_size() do
+                    local batch_size = triangulation_controller.DT_delta_final_mesh_batch.queue_popRight()
+
+                    for j = 1, batch_size do
+                        local triangleID = triangulation_controller.DT_delta_final_mesh_triangle_id.queue_popRight()
+                        if batch_sequence then
+                            triangleMeshID[triangleID] = nil -- rem from final mesh
+                            triangulation_controller.DT_triangles.list_remove(triangleID) -- make old triangle data able to be overwritten
+                        else
+                            triangleMeshID[triangleID] = true -- add
+                        end
                     end
+                    batch_sequence = not batch_sequence
                 end
 
                 --for k in pairs(triangleMeshID) do --debug
