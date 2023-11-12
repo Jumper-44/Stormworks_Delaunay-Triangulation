@@ -48,44 +48,218 @@ end
 
 
 
--- Bitwise operations can only be done to integers, but also need to send the numbers as float when sending from script to script as Stormworks likes it that way.
---function int32_to_uint16(a, b) -- Takes 2 int32 and converts them to uint16 residing in a single number
---	return (('f'):unpack(('I'):pack( ((a&0xffff)<<16) | (b&0xffff)) ))
---end
---
---local function uint16_to_int32(x) -- Takes a single number containing 2 uint16 and unpacks them.
---	x = ('I'):unpack(('f'):pack(x))
---	return x>>16, x&0xffff
---end
+require("JumperLib.DataStructures.JL_list")
+
+local v_x, v_y, v_z, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVisible, v_frame,
+    t_v1, t_v2, t_v3, t_colorR, t_colorG, t_colorB, t_centroidDepth,
+    vertices, triangles,
+    batch_sequence, batch_sequence_prev, vertex3_pointer, triangle_data1, triangle_data2,
+    px_cx, px_cy, px_cx_pos, px_cy_pos,
+    temp, adx, ady, adz, bdx, bdy, bdz, cdx, cdy, cdz, t, inv_t, lightDirX, lightDirY, lightDirZ,
+    initialize, uint16_to_int32, point_sub, normalize, add_triangle, WorldToScreen_triangles_sortFunction, WorldToScreen_triangles
+
+local vertex_buffer_list, triangle_buffer_list, cameraTransform, vertex3_buffer, width, height, colors =
+    {0, 0, 0, 0, 0, 0, false, false, 0}, -- vertex_buffer_list
+    {0, 0, 0, 0, 0, 0, 0},               -- triangle_buffer_list
+    {}, -- cameraTransform
+    {}, -- vertex3_buffer
+    property.getNumber("w"), property.getNumber("h"), -- width, height
+    {{flat = {0,0,255}, steep = {0,150,255}}, {flat = {0,255,0}, steep = {255,200,0}}} -- colors = {color_water, color_ground}
+
+px_cx, px_cy = width/2, height/2
+px_cx_pos, px_cy_pos = px_cx + property.getNumber("pxOffsetX"), px_cy + property.getNumber("pxOffsetY")
+
+function initialize()
+    v_x, v_y, v_z, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVisible, v_frame,  t_v1, t_v2, t_v3, t_colorR, t_colorG, t_colorB, t_centroidDepth = {},{},{},{},{},{},{},{},{}, {},{},{},{},{},{},{}
+    vertices = list({v_x, v_y, v_z, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVisible, v_frame})
+    triangles = list({t_v1, t_v2, t_v3, t_colorR, t_colorG, t_colorB, t_centroidDepth})
+end
+initialize()
+---@cast vertices list
+---@cast triangles list
+
+function uint16_to_int32(x) -- Takes a single number containing 2 uint16 and unpacks them.
+	x = ('I'):unpack(('f'):pack(x))
+	return x>>16, x&0xffff
+end
+
+---@param a integer
+---@param b integer
+---@return number, number, number
+function point_sub(a, b)
+    return v_x[a]-v_x[b], v_y[a]-v_y[b], v_z[a]-v_z[b]
+end
+
+function normalize(x,y,z)
+    temp = 1 / (x*x + y*y + z*z)^0.5
+    return x*temp, y*temp, z*temp
+end
+
+lightDirX, lightDirY, lightDirZ = normalize(0.1, -1, 0.1)
+
+---@return integer
+function add_triangle()
+    -- calculate color
+    adx, ady, adz = point_sub(triangle_buffer_list[1], triangle_buffer_list[2])
+    bdx, bdy, bdz = point_sub(triangle_buffer_list[2], triangle_buffer_list[3])
+    cdx, cdy, cdz = normalize( -- normalize(cross(a, b))
+        ady*bdz - adz*bdy,
+        adz*bdx - adx*bdz,
+        adx*bdy - ady*bdx
+    )
+
+    t = cdx*lightDirX + cdy*lightDirY + cdz*lightDirZ
+    t = t*t -- absoloute value and better curve
+    inv_t = 1-t
+
+    temp = 0
+    for i = 1, 3 do -- amount of vertices under 0 height, i.e. underwater
+        temp = v_y[triangle_buffer_list[i]] < 0 and 1 or 0
+    end
+    temp = temp > 1 and colors[1] or colors[2]
+
+    for i = 1, 3 do -- rgb
+        triangle_buffer_list[i+3] = (temp.flat[i]*t + temp.steep[i]*inv_t) * t*t*0.9 + 0.1
+    end
+
+    return triangles.list_insert(triangle_buffer_list)
+end
+
+
+WorldToScreen_triangles_sortFunction = function(t1,t2)
+    return t_centroidDepth[t1] > t_centroidDepth[t2]
+end
+
+---@param triangle_buffer table
+---@param frameCount number
+---@return table
+WorldToScreen_triangles = function(triangle_buffer, frameCount)
+    local new_triangle_buffer, currentTriangle, vertex_id, X, Y, Z, W, v1, v2, v3
+    new_triangle_buffer = {}
+
+    --for i = 1, #triangle_buffer do
+    for i in pairs(triangle_buffer) do --temp
+
+        --currentTriangle = triangle_buffer[i]
+        currentTriangle = i -- temp
+        for j = 1, 3 do
+            vertex_id = triangles[j][currentTriangle]
+
+            if v_frame[vertex_id] ~= frameCount then -- is the transformed vertex NOT already calculated
+                X, Y, Z, W =
+                    v_x[vertex_id],
+                    v_y[vertex_id],
+                    v_z[vertex_id],
+                    1
+
+                X,Y,Z,W =
+                    cameraTransform[1]*X + cameraTransform[5]*Y + cameraTransform[9]*Z + cameraTransform[13],
+                    cameraTransform[2]*X + cameraTransform[6]*Y + cameraTransform[10]*Z + cameraTransform[14],
+                    cameraTransform[3]*X + cameraTransform[7]*Y + cameraTransform[11]*Z + cameraTransform[15],
+                    cameraTransform[4]*X + cameraTransform[8]*Y + cameraTransform[12]*Z + cameraTransform[16]
+
+                v_inNearAndFar[vertex_id] = 0<=Z and Z<=W
+                if v_inNearAndFar[vertex_id] then -- Is vertex between near and far plane
+                    v_isVisible[vertex_id] = -W<=X and X<=W  and  -W<=Y and Y<=W -- Is vertex in frustum (excluded near and far plane test)
+
+                    W = 1/W
+                    v_sx[vertex_id] = X*W*px_cx + px_cx_pos
+                    v_sy[vertex_id] = Y*W*px_cy + px_cy_pos
+                    v_sz[vertex_id] = Z*W
+                end
+            end
+        end
+
+        v1, v2, v3 = t_v1[currentTriangle], t_v2[currentTriangle], t_v3[currentTriangle]
+        if -- (Most average cases) determining if triangle is visible / should be rendered
+            v_inNearAndFar[v1] and v_inNearAndFar[v2] and v_inNearAndFar[v3]                                           -- Are all vertices within near and far plane
+            and (v_isVisible[v1] or v_isVisible[v2] or v_isVisible[v3])                                                -- and atleast 1 visible in frustum
+            and (v_sx[v1]*v_sy[v2] - v_sx[v2]*v_sy[v1] + v_sx[v2]*v_sy[v3] - v_sx[v3]*v_sy[v2] + v_sx[v3]*v_sy[v1] - v_sx[v1]*v_sy[v3] > 0) -- and is the triangle facing the camera (backface culling CCW. Flip '>' for CW. Can be removed if triangles aren't consistently ordered CCW/CW)
+        then
+            t_centroidDepth[currentTriangle] = v_sz[v1] + v_sz[v2] + v_sz[v3] -- centroid depth for sort
+            new_triangle_buffer[#new_triangle_buffer+1] = currentTriangle
+        end
+    end
+
+    table.sort(new_triangle_buffer, WorldToScreen_triangles_sortFunction) -- painter's algorithm | triangle centroid depth sort
+    return new_triangle_buffer
+end
 
 
 
-
-
-local cameraTransform = {}
-local renderOn, clear, color_alpha
+local temp_triangle_buffer = {}
 
 function onTick()
     renderOn = input.getBool(1)
-    clear = input.getBool(3)
-
-    if clear then
-        -- ...
+    if input.getBool(3) then -- reset/clear data
+        initialize()
     end
 
     if renderOn then
         for i = 1, 16 do
             cameraTransform[i] = input.getNumber(i)
         end
-        color_alpha = input.getNumber(17)
 
-        -- Get triangles
-        -- ...
+        color_alpha = 0
+        for i = 25, 32 do
+            color_alpha = color_alpha << 1 | (input.getBool(i) and 1 or 0)
+        end
+    end
+
+    for i = 16, 19, 3 do -- get point(s)
+        for j = 1, 3 do
+            vertex_buffer_list[j] = input.getNumber(i + j)
+        end
+        if vertex_buffer_list[1] ~= 0 and vertex_buffer_list[2] ~= 0 then
+            vertices.list_insert(vertex_buffer_list)
+        end
+    end
+
+    -- get triangle data
+    batch_sequence, batch_sequence_prev = false, false
+    vertex3_buffer[1], vertex3_buffer[2] = uint16_to_int32(input.getNumber(32))
+    vertex3_pointer = 0
+    for i = 1, 9 do
+        batch_sequence = input.getBool(3 + i)
+        if batch_sequence and not batch_sequence_prev then
+            vertex3_pointer = vertex3_pointer + 1
+            triangle_buffer_list[3] = vertex3_buffer[vertex3_pointer]
+        end
+        batch_sequence_prev = batch_sequence
+
+        triangle_data1, triangle_data2 = uint16_to_int32(input.getNumber(i + 22))
+        if triangle_data1 > 0 then
+            if batch_sequence then -- triangle_data2 is assumed not 0
+                triangle_buffer_list[1] = triangle_data1
+                triangle_buffer_list[2] = triangle_data2
+                --add_triangle()
+                temp_triangle_buffer[add_triangle()] = true -- temp
+            else
+                triangles.list_remove(triangle_data1)
+                temp_triangle_buffer[triangle_data1] = nil -- temp
+                if triangle_data2 > 0 then
+                    triangles.list_remove(triangle_data2)
+                    temp_triangle_buffer[triangle_data2] = nil -- temp
+                end
+            end
+        end
     end
 end
 
+tick = 0
 function onDraw()
     if renderOn then
-        -- ...
+        triangle_buffer = WorldToScreen_triangles(temp_triangle_buffer, tick)
+        for i = 1, #triangle_buffer do
+            local tri = triangle_buffer[i]
+            local v1, v2, v3 = tri[1], tri[2], tri[3]
+            if tri then
+                screen.setColor(t_colorR[tri], t_colorG[tri], t_colorB[tri])
+                screen.drawTriangleF(v_sx[v1], v_sy[v1], v_sx[v2], v_sy[v2], v_sx[v3], v_sy[v3])
+            end
+        end
+        screen.setColor(0,0,0, 255-color_alpha)
+
+        tick = tick + 1
     end
 end
