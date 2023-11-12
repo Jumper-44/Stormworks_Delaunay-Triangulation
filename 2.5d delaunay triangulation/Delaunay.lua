@@ -89,10 +89,10 @@ require("JumperLib.DataStructures.JL_queue")
 ---@param max_triangle_size_squared number
 ---@return triangulation2_5d
 function triangulation2_5d(max_triangle_size_squared)
-    local delta_final_mesh_triangle_id, delta_final_mesh_batch, v_x, v_y, v_near_triangle, t_v1, t_v2, t_v3, t_neighbor1, t_neighbor2, t_neighbor3, t_isChecked, t_isInvalid, t_isSurface, vertex_buffer, triangle_buffer = queue(),queue(), {},{},{}, {},{},{},{},{},{},{},{},{}, {0,0,0,1}, {0,0,0,false,false,false,false,false,false}
+    local delta_final_mesh_triangle_id, delta_final_mesh_batch, v_x, v_y, v_z, v_near_triangle, t_v1, t_v2, t_v3, t_neighbor1, t_neighbor2, t_neighbor3, t_isChecked, t_isInvalid, t_isSurface, vertex_buffer, triangle_buffer = queue(),queue(), {},{},{},{}, {},{},{},{},{},{},{},{},{}, {0,0,0,1}, {0,0,0,false,false,false,false,false,false}
     local vertices, vertices_kdtree, triangles, triangles_vertices, triangles_neighbors,  triangle_check_queue, triangle_check_queue_pointer, triangle_check_queue_size,  invalid_triangles, invalid_triangles_size,  edge_boundary_neighbor, edge_boundary_v1, edge_boundary_v2, edge_boundary_size, edge_shared,  finalMeshID, finalMeshFreeID =
-        list({v_x, v_y, {}, v_near_triangle}), -- x,y,z, near_triangle_reference                                -- vertices
-        IKDTree(v_x, v_y),                                                                                      -- vertices_kdtree
+        list({v_x, v_y, v_z, v_near_triangle}),                                                                 -- vertices
+        IKDTree(v_x, v_y, v_z),                                                                                      -- vertices_kdtree
         list({t_v1, t_v2, t_v3, t_neighbor1, t_neighbor2, t_neighbor3, t_isChecked, t_isInvalid, t_isSurface}), -- triangles
         {t_v1, t_v2, t_v3},                                                                                     -- triangles_vertices
         {t_neighbor1, t_neighbor2, t_neighbor3},                                                                -- triangles_neighbors
@@ -107,7 +107,7 @@ function triangulation2_5d(max_triangle_size_squared)
     ---@param b integer
     ---@return number, number
     function pointSub(a, b)
-        return v_x[a]-v_x[b], v_y[a]-v_y[b]
+        return v_x[a]-v_x[b], v_z[a]-v_z[b]
     end
 
     ---@param x number
@@ -186,9 +186,9 @@ function triangulation2_5d(max_triangle_size_squared)
 --    end
 
     -- init super-triangle
-    add_vertex(-9E5, -9E5, 0)
-    add_vertex(9E5,  -9E5, 0)
-    add_vertex(0,     9E5, 0)
+    add_vertex(-9E5, 0, -9E5)
+    add_vertex(9E5,  0, -9E5)
+    add_vertex(0,    0,  9E5)
     add_triangle(1, 2, 3)
 
 
@@ -199,7 +199,7 @@ function triangulation2_5d(max_triangle_size_squared)
         DT_delta_final_mesh_triangle_id = delta_final_mesh_triangle_id;
         DT_delta_final_mesh_batch = delta_final_mesh_batch;
 
-        ---@param point table {x, y, z}, point is assumed to be within super-triangle{{-9E5, -9E5}, {9E5, -9E5}, {0, 9E5}}
+        ---@param point table {x, y, z}, point is assumed to be within super-triangle
         DT_insert = function(point) -- Do Bowyer-Watson Algorithm and update the delta final mesh (The final mesh sent to next script)
             triangle_check_queue[1] = v_near_triangle[vertices_kdtree.IKDTree_nearestNeighbor(point)]
             t_isChecked[triangle_check_queue[1]] = true
@@ -333,6 +333,7 @@ function onTick()
     if input.getBool(3) then -- if clear
         triangulation_controller = triangulation2_5d(max_triangle_size_squared)
         batch_sequence = true
+        batch_rest = 0
     end
 
     for i = 1, 32 do
@@ -341,21 +342,23 @@ function onTick()
     end
 
     accepted_points = 0
-    for i = 1, 6 do -- 1-2 are primary lasers and 3-6 are buffer lasers, that will be tested if 1-2 fails filter, to try keep the scan at max.
-        cPBuffer = pointBuffer[i]
-        for j = 1, 3 do
-            cPBuffer[j] = input.getNumber((i-1)*3 + j)
-        end
+    if #triangulation_controller.DT_vertices[1] < 65536 then
+        for i = 1, 6 do -- 1-2 are primary lasers and 3-6 are buffer lasers, that will be tested if 1-2 fails filter, to try keep the scan at max.
+            cPBuffer = pointBuffer[i]
+            for j = 1, 3 do
+                cPBuffer[j] = input.getNumber((i-1)*3 + j)
+            end
 
-        if cPBuffer[1] ~= 0 and cPBuffer[2] ~= 0 then
-            _, dist = triangulation_controller.DT_vertices_kdtree.IKDTree_nearestNeighbor(cPBuffer)
-            if dist > point_min_density_squared then
-                triangulation_controller.DT_insert(cPBuffer)
-                for j = 1, 3 do
-                    output.setNumber(16 + j + accepted_points*3, cPBuffer[j]) -- [17,22]
+            if cPBuffer[1] ~= 0 and cPBuffer[3] ~= 0 then
+                _, dist = triangulation_controller.DT_vertices_kdtree.IKDTree_nearestNeighbor(cPBuffer)
+                if dist > point_min_density_squared then
+                    triangulation_controller.DT_insert(cPBuffer)
+                    for j = 1, 3 do
+                        output.setNumber(16 + j + accepted_points*3, cPBuffer[j]) -- [17,22]
+                    end
+                    accepted_points = accepted_points + 1
+                    if accepted_points == 2 then break end
                 end
-                accepted_points = accepted_points + 1
-                if accepted_points == 2 then break end
             end
         end
     end
@@ -367,10 +370,9 @@ function onTick()
     batch_add_ran = (batch_rest > 0 and batch_sequence) and 1 or 0
     output_buffer_pointer = 1
     repeat
-        if batch_rest == 0 and triangulation_controller.DT_delta_final_mesh_batch.first <= triangulation_controller.DT_delta_final_mesh_batch.last then -- if batch_rest == 0 and not queue.isEmpty()
+        if (batch_rest == 0) and (output_buffer_pointer <= 18) and (triangulation_controller.DT_delta_final_mesh_batch.first <= triangulation_controller.DT_delta_final_mesh_batch.last) and (batch_add_ran < 2 or batch_sequence) and (output_buffer_pointer%2 == 1) then
             batch_sequence = not batch_sequence
             batch_add_ran = batch_sequence and batch_add_ran + 1 or batch_add_ran
-            output_buffer_pointer = output_buffer_pointer + (output_buffer_pointer+1)%2
             batch_rest = triangulation_controller.DT_delta_final_mesh_batch.queue_popRight()
         end
 
@@ -391,7 +393,7 @@ function onTick()
 
         if output_buffer_pointer % 2 == 0 then
             output.setNumber(22 + output_buffer_pointer/2, (('f'):unpack(('I'):pack( ((output_buffer[output_buffer_pointer-1]&0xffff)<<16) | (output_buffer[output_buffer_pointer]&0xffff)) )))      -- inlined function: output.setNumber(22 + output_buffer_pointer/2, int32_to_uint16(output_buffer[output_buffer_pointer-1], output_buffer[output_buffer_pointer]))
-            output.setBool(4 + output_buffer_pointer/2, batch_sequence)
+            output.setBool(3 + output_buffer_pointer/2, batch_sequence) -- [4,12]
         end
 
         output_buffer_pointer = output_buffer_pointer + 1
@@ -413,7 +415,8 @@ do -- run in VSCode with F6 and press/hold right click to place point(s) to tria
     function onTick()
         local touchX, touchY, isPressing = input.getNumber(3), input.getNumber(4), input.getBool(1)
         pointBuffer[1] = touchX
-        pointBuffer[2] = touchY
+        pointBuffer[2] = math.random()
+        pointBuffer[3] = touchY
 
         if isPressing then
             local _, dist = triangulation_controller.DT_vertices_kdtree.IKDTree_nearestNeighbor(pointBuffer)
@@ -448,7 +451,7 @@ do -- run in VSCode with F6 and press/hold right click to place point(s) to tria
     end
 
     function onDraw()
-        local vx, vy = triangulation_controller.DT_vertices[1], triangulation_controller.DT_vertices[2]
+        local vx, vy = triangulation_controller.DT_vertices[1], triangulation_controller.DT_vertices[3]
         for k in pairs(triangleMeshID) do
             local tv1, tv2, tv3 = triangulation_controller.DT_triangles[1], triangulation_controller.DT_triangles[2], triangulation_controller.DT_triangles[3]
             screen.setColor(k*k%255, k*4%255, 100)

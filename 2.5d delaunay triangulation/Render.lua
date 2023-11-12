@@ -52,7 +52,7 @@ require("JumperLib.DataStructures.JL_list")
 
 local v_x, v_y, v_z, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVisible, v_frame,
     t_v1, t_v2, t_v3, t_colorR, t_colorG, t_colorB, t_centroidDepth,
-    vertices, triangles,
+    vertices, triangles, frameCount,
     batch_sequence, batch_sequence_prev, vertex3_pointer, triangle_data1, triangle_data2,
     px_cx, px_cy, px_cx_pos, px_cy_pos,
     temp, adx, ady, adz, bdx, bdy, bdz, cdx, cdy, cdz, t, inv_t, lightDirX, lightDirY, lightDirZ,
@@ -73,6 +73,11 @@ function initialize()
     v_x, v_y, v_z, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVisible, v_frame,  t_v1, t_v2, t_v3, t_colorR, t_colorG, t_colorB, t_centroidDepth = {},{},{},{},{},{},{},{},{}, {},{},{},{},{},{},{}
     vertices = list({v_x, v_y, v_z, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVisible, v_frame})
     triangles = list({t_v1, t_v2, t_v3, t_colorR, t_colorG, t_colorB, t_centroidDepth})
+    frameCount = 0
+
+    for i = 1, 3 do
+        vertices.list_insert(vertex_buffer_list) -- super-triangle vertices
+    end
 end
 initialize()
 ---@cast vertices list
@@ -114,7 +119,7 @@ function add_triangle()
 
     temp = 0
     for i = 1, 3 do -- amount of vertices under 0 height, i.e. underwater
-        temp = v_y[triangle_buffer_list[i]] < 0 and 1 or 0
+        temp = temp + (v_y[triangle_buffer_list[i]] < 0 and 1 or 0)
     end
     temp = temp > 1 and colors[1] or colors[2]
 
@@ -193,6 +198,7 @@ function onTick()
     renderOn = input.getBool(1)
     if input.getBool(3) then -- reset/clear data
         initialize()
+        temp_triangle_buffer = {} -- temp
     end
 
     if renderOn then
@@ -210,7 +216,7 @@ function onTick()
         for j = 1, 3 do
             vertex_buffer_list[j] = input.getNumber(i + j)
         end
-        if vertex_buffer_list[1] ~= 0 and vertex_buffer_list[2] ~= 0 then
+        if vertex_buffer_list[1] ~= 0 and vertex_buffer_list[3] ~= 0 then
             vertices.list_insert(vertex_buffer_list)
         end
     end
@@ -246,20 +252,21 @@ function onTick()
     end
 end
 
-tick = 0
 function onDraw()
     if renderOn then
-        triangle_buffer = WorldToScreen_triangles(temp_triangle_buffer, tick)
+        triangle_buffer = WorldToScreen_triangles(temp_triangle_buffer, frameCount)
         for i = 1, #triangle_buffer do
             local tri = triangle_buffer[i]
-            local v1, v2, v3 = tri[1], tri[2], tri[3]
-            if tri then
-                screen.setColor(t_colorR[tri], t_colorG[tri], t_colorB[tri])
-                screen.drawTriangleF(v_sx[v1], v_sy[v1], v_sx[v2], v_sy[v2], v_sx[v3], v_sy[v3])
-            end
+            local v1, v2, v3 = t_v1[tri], t_v2[tri], t_v3[tri]
+
+            screen.setColor(t_colorR[tri], t_colorG[tri], t_colorB[tri])
+            screen.drawTriangleF(v_sx[v1], v_sy[v1], v_sx[v2], v_sy[v2], v_sx[v3], v_sy[v3])
         end
         screen.setColor(0,0,0, 255-color_alpha)
 
-        tick = tick + 1
+        screen.setColor(255,255,0)
+        screen.drawText(0,5, "#T "..#triangle_buffer)
+
+        frameCount = frameCount + 1
     end
 end
