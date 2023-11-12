@@ -262,7 +262,8 @@ function onDraw()
             screen.setColor(t_colorR[tri], t_colorG[tri], t_colorB[tri])
             screen.drawTriangleF(v_sx[v1], v_sy[v1], v_sx[v2], v_sy[v2], v_sx[v3], v_sy[v3])
         end
-        screen.setColor(0,0,0, 255-color_alpha)
+        screen.setColor(0, 0, 0, color_alpha)
+        screen.drawRectF(0, 0, width, height)
 
         screen.setColor(255,255,0)
         screen.drawText(0,5, "#T "..#triangle_buffer)
