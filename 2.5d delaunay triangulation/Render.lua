@@ -53,7 +53,7 @@ require("JumperLib.DataStructures.JL_list")
 local v_x, v_y, v_z, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVisible, v_frame,
     t_v1, t_v2, t_v3, t_colorR, t_colorG, t_colorB, t_centroidDepth,
     vertices, triangles, frameCount,
-    batch_sequence, batch_sequence_prev, vertex3_pointer, triangle_data1, triangle_data2,
+    batch_sequence, batch_sequence_prev, batch_add_ran, triangle_data1, triangle_data2,
     px_cx, px_cy, px_cx_pos, px_cy_pos,
     temp, adx, ady, adz, bdx, bdy, bdz, cdx, cdy, cdz, t, inv_t, lightDirX, lightDirY, lightDirZ,
     initialize, uint16_to_int32, point_sub, normalize, add_triangle, WorldToScreen_triangles_sortFunction, WorldToScreen_triangles
@@ -212,28 +212,27 @@ function onTick()
         end
     end
 
-    for i = 16, 19, 3 do -- get point(s)
+    temp = input.getBool(21) and (input.getBool(22) and 0 or 3) or 6
+    for i = 16, 21-temp, 3 do -- get point(s)
         for j = 1, 3 do
             vertex_buffer_list[j] = input.getNumber(i + j)
         end
-        if vertex_buffer_list[1] ~= 0 and vertex_buffer_list[3] ~= 0 then
-            vertices.list_insert(vertex_buffer_list)
-        end
+        vertices.list_insert(vertex_buffer_list)
     end
 
     -- get triangle data
     batch_sequence, batch_sequence_prev = false, false
     vertex3_buffer[1], vertex3_buffer[2] = uint16_to_int32(input.getNumber(32))
-    vertex3_pointer = 0
-    for i = 1, 9 do
+    batch_add_ran = 0
+    for i = 7-temp, 15 do
         batch_sequence = input.getBool(3 + i)
         if batch_sequence and not batch_sequence_prev then
-            vertex3_pointer = vertex3_pointer + 1
-            triangle_buffer_list[3] = vertex3_buffer[vertex3_pointer]
+            batch_add_ran = batch_add_ran + 1
+            triangle_buffer_list[3] = vertex3_buffer[batch_add_ran]
         end
         batch_sequence_prev = batch_sequence
 
-        triangle_data1, triangle_data2 = uint16_to_int32(input.getNumber(i + 22))
+        triangle_data1, triangle_data2 = uint16_to_int32(input.getNumber(i + 16))
         if triangle_data1 > 0 then
             if batch_sequence then -- triangle_data2 is assumed not 0
                 triangle_buffer_list[1] = triangle_data1

@@ -357,47 +357,46 @@ function onTick()
                         output.setNumber(16 + j + accepted_points*3, cPBuffer[j]) -- [17,22]
                     end
                     accepted_points = accepted_points + 1
+                    output.setBool(20 + accepted_points, true) -- [21,22]
                     if accepted_points == 2 then break end
                 end
             end
         end
     end
 
-    for i = 17 + accepted_points*3, 22 do -- clear remaining output of unaccepted laser point [17,22]
-        output.setNumber(i, 0)
-    end
-
     batch_add_ran = (batch_rest > 0 and batch_sequence) and 1 or 0
-    output_buffer_pointer = 1
+    output_buffer_pointer = accepted_points > 0 and (accepted_points > 1 and 13 or 7) or 1
     repeat
-        if (batch_rest == 0) and (output_buffer_pointer <= 18) and (triangulation_controller.DT_delta_final_mesh_batch.first <= triangulation_controller.DT_delta_final_mesh_batch.last) and (batch_add_ran < 2 or batch_sequence) and (output_buffer_pointer%2 == 1) then
-            batch_sequence = not batch_sequence
-            batch_add_ran = batch_sequence and batch_add_ran + 1 or batch_add_ran
-            batch_rest = triangulation_controller.DT_delta_final_mesh_batch.queue_popRight()
-        end
-
-        if batch_rest > 0 and output_buffer_pointer <= 18 then
-            triangleID = triangulation_controller.DT_delta_final_mesh_triangle_id.queue_popRight()
-            if batch_sequence then -- add triangle
-                output_buffer[output_buffer_pointer] = triangulation_controller.DT_triangles[1][triangleID] -- triangle vertex 1
-                output_buffer_pointer = output_buffer_pointer + 1
-                output_buffer[output_buffer_pointer] = triangulation_controller.DT_triangles[2][triangleID] -- triangle vertex 2
-                output_buffer[18 + batch_add_ran] = triangulation_controller.DT_triangles[3][triangleID]    -- triangle vertex 3
-            else -- remove triangle
-                output_buffer[output_buffer_pointer] = triangulation_controller.DT_triangles[9][triangleID] -- triangle final mesh id to be removed
-                triangulation_controller.DT_triangles.removed_id[#triangulation_controller.DT_triangles.removed_id] = triangleID -- make old triangle data able to be overwritten       -- inlined function: triangulation_controller.DT_triangles.list_remove(triangleID)
+        if output_buffer_pointer <= 30 then
+            if (batch_rest == 0) and (triangulation_controller.DT_delta_final_mesh_batch.first <= triangulation_controller.DT_delta_final_mesh_batch.last) and (batch_add_ran < 2 or batch_sequence) and (output_buffer_pointer%2 == 1) then
+                batch_sequence = not batch_sequence
+                batch_add_ran = batch_sequence and batch_add_ran + 1 or batch_add_ran
+                batch_rest = triangulation_controller.DT_delta_final_mesh_batch.queue_popRight()
             end
 
-            batch_rest = batch_rest - 1
+            if batch_rest > 0 then
+                triangleID = triangulation_controller.DT_delta_final_mesh_triangle_id.queue_popRight()
+                if batch_sequence then -- add triangle
+                    output_buffer[output_buffer_pointer] = triangulation_controller.DT_triangles[1][triangleID] -- triangle vertex 1
+                    output_buffer_pointer = output_buffer_pointer + 1
+                    output_buffer[output_buffer_pointer] = triangulation_controller.DT_triangles[2][triangleID] -- triangle vertex 2
+                    output_buffer[30 + batch_add_ran] = triangulation_controller.DT_triangles[3][triangleID]    -- triangle vertex 3
+                else -- remove triangle
+                    output_buffer[output_buffer_pointer] = triangulation_controller.DT_triangles[9][triangleID] -- triangle final mesh id to be removed
+                    triangulation_controller.DT_triangles.removed_id[#triangulation_controller.DT_triangles.removed_id] = triangleID -- make old triangle data able to be overwritten       -- inlined function: triangulation_controller.DT_triangles.list_remove(triangleID)
+                end
+
+                batch_rest = batch_rest - 1
+            end
         end
 
         if output_buffer_pointer % 2 == 0 then
-            output.setNumber(22 + output_buffer_pointer/2, (('f'):unpack(('I'):pack( ((output_buffer[output_buffer_pointer-1]&0xffff)<<16) | (output_buffer[output_buffer_pointer]&0xffff)) )))      -- inlined function: output.setNumber(22 + output_buffer_pointer/2, int32_to_uint16(output_buffer[output_buffer_pointer-1], output_buffer[output_buffer_pointer]))
-            output.setBool(3 + output_buffer_pointer/2, batch_sequence) -- [4,12]
+            output.setNumber(16 + output_buffer_pointer/2, (('f'):unpack(('I'):pack( ((output_buffer[output_buffer_pointer-1]&0xffff)<<16) | (output_buffer[output_buffer_pointer]&0xffff)) )))      -- inlined function: output.setNumber(22 + output_buffer_pointer/2, int32_to_uint16(output_buffer[output_buffer_pointer-1], output_buffer[output_buffer_pointer]))
+            output.setBool(3 + output_buffer_pointer/2, batch_sequence)
         end
 
         output_buffer_pointer = output_buffer_pointer + 1
-    until output_buffer_pointer > 20
+    until output_buffer_pointer > 32
 end
 
 
