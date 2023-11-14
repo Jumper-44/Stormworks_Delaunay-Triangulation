@@ -63,10 +63,7 @@ end
 
 
 
-
-require("JumperLib.DataStructures.JL_kdtree")
-require("JumperLib.DataStructures.JL_queue")
-
+-- Inlined int32_to_uint16. uint16_to_int32 not used.
 -- Bitwise operations can only be done to integers, but also need to send the numbers as float when sending from script to script as Stormworks likes it that way.
 --function int32_to_uint16(a, b) -- Takes 2 int32 and converts them to uint16 residing in a single number
 --	return (('f'):unpack(('I'):pack( ((a&0xffff)<<16) | (b&0xffff)) ))
@@ -77,24 +74,28 @@ require("JumperLib.DataStructures.JL_queue")
 --	return x>>16, x&0xffff
 --end
 
+require("JumperLib.DataStructures.JL_kdtree")
+require("JumperLib.DataStructures.JL_queue")
 
----comment
 ---@class triangulation2_5d
 ---@field DT_vertices list
 ---@field DT_vertices_kdtree IKDTree
 ---@field DT_triangles list
 ---@field DT_delta_final_mesh_triangle_id queue
----@field DT_delta_final_mesh_batch queue
----@field DT_insert fun(point: table)
+---@field DT_delta_final_mesh_batch queue Everytime a point is inserted then 2 batches/integers are added to queue of first amount of removed and then amount of added triangles, to final/accepted mesh.
+---@field DT_insert fun(point: table<number, number, number>)
+---2.5D delaunay triangulation with Boywer-Watson algorithm. O(n*log n) average insertion.  
+---Each new triangle is evaluated if part of final mesh by the radius of minimum enclosing circle of triangle.  
+---Require "JumperLib.DataStructures.JL_kdtree" and "JumperLib.DataStructures.JL_queue"
 ---@param max_triangle_size_squared number
 ---@return triangulation2_5d
 function triangulation2_5d(max_triangle_size_squared)
     local delta_final_mesh_triangle_id, delta_final_mesh_batch, v_x, v_y, v_z, v_near_triangle, t_v1, t_v2, t_v3, t_neighbor1, t_neighbor2, t_neighbor3, t_isChecked, t_isInvalid, t_isSurface, vertex_buffer, triangle_buffer = queue(),queue(), {},{},{},{}, {},{},{},{},{},{},{},{},{}, {0,0,0,1}, {0,0,0,false,false,false,false,false,false}
     local vertices, vertices_kdtree, triangles, triangles_vertices, triangles_neighbors,  triangle_check_queue, triangle_check_queue_pointer, triangle_check_queue_size,  invalid_triangles, invalid_triangles_size,  edge_boundary_neighbor, edge_boundary_v1, edge_boundary_v2, edge_boundary_size, edge_shared,  finalMeshID, finalMeshFreeID =
         list({v_x, v_y, v_z, v_near_triangle}),                                                                 -- vertices
-        IKDTree(v_x, v_y, v_z),                                                                                      -- vertices_kdtree
+        IKDTree(v_x, v_y, v_z),                                                                                 -- vertices_kdtree
         list({t_v1, t_v2, t_v3, t_neighbor1, t_neighbor2, t_neighbor3, t_isChecked, t_isInvalid, t_isSurface}), -- triangles
-        {t_v1, t_v2, t_v3},                                                                                     -- triangles_vertices
+        {t_v1, t_v2, t_v3},                                                                                     -- triangles_vertices (Note: Could be removed and just use 'triangles', if chars are needed)
         {t_neighbor1, t_neighbor2, t_neighbor3},                                                                -- triangles_neighbors
         {}, 0, 0,           -- triangle_check_queue, triangle_check_queue_pointer, triangle_check_queue_size
         {}, 0,              -- invalid_triangles, invalid_triangles_size
@@ -130,8 +131,8 @@ function triangulation2_5d(max_triangle_size_squared)
         ccw = adx * bdy - ady * bdx < 0
         triangle_buffer[1] = ccw and v1 or v2
         triangle_buffer[2] = ccw and v2 or v1
-        triangle_buffer[3] = v3
-        new_triangle = triangles.list_insert(triangle_buffer) -- returns given integer id to 'triangles'
+        triangle_buffer[3] = v3 -- note that the 3rd vertex stays the same, but 1 & 2 may swap to set orientation counterclockwise (CCW)
+        new_triangle = triangles.list_insert(triangle_buffer)
     end
 
 -- inlined in_circle to reduce char
@@ -199,16 +200,16 @@ function triangulation2_5d(max_triangle_size_squared)
         DT_delta_final_mesh_triangle_id = delta_final_mesh_triangle_id;
         DT_delta_final_mesh_batch = delta_final_mesh_batch;
 
-        ---@param point table {x, y, z}, point is assumed to be within super-triangle
+        ---@param point table {x, y, z}, point is assumed to be within super-triangle. Will fail and soon crash if outside super-triangle
         DT_insert = function(point) -- Do Bowyer-Watson Algorithm and update the delta final mesh (The final mesh sent to next script)
-            triangle_check_queue[1] = v_near_triangle[vertices_kdtree.IKDTree_nearestNeighbor(point)]
+            triangle_check_queue[1] = v_near_triangle[vertices_kdtree.IKDTree_nearestNeighbor(point)] -- Jump to a near triangle to 'point'. Keypoint for going from O(n*n) to O(n*log n) on average
             t_isChecked[triangle_check_queue[1]] = true
             triangle_check_queue_pointer = 1
             triangle_check_queue_size = 1
             invalid_triangles_size = 0
             add_vertex(point[1], point[2], point[3]) -- assigned index to 'pointID'
 
-            repeat -- Find all invalid triangles
+            repeat -- Find all invalid triangles, by walking around neighboring triangles till all invalid triangle(s) (which all touch each other) has been found
                 current_triangle = triangle_check_queue[triangle_check_queue_pointer]
 
                 -- inlined function: if in_circle(t_v1[current_triangle], t_v2[current_triangle], t_v3[current_triangle], pointID) < 1e-9 then
@@ -224,7 +225,7 @@ function triangulation2_5d(max_triangle_size_squared)
                 if t_isInvalid[current_triangle] or invalid_triangles_size == 0 then -- If current_triangle is invalid OR no invalid triangles has been found yet then try add neighboring triangles of current_triangle to check queue
                     for i = 1, 3 do
                         current_neighbor = triangles_neighbors[i][current_triangle]
-                        if current_neighbor and not t_isChecked[current_neighbor] then -- if neighbor exist and has not been checked yet then add to queue
+                        if current_neighbor and not t_isChecked[current_neighbor] then -- if neighbor exist and has not been checked yet then add to check queue
                             triangle_check_queue_size = triangle_check_queue_size + 1
                             triangle_check_queue[triangle_check_queue_size] = current_neighbor
                             t_isChecked[current_neighbor] = true
@@ -244,7 +245,7 @@ function triangulation2_5d(max_triangle_size_squared)
                 current_triangle = invalid_triangles[i]
                 for j = 1, 3 do
                     current_neighbor = triangles_neighbors[j][current_triangle]
-                    if not (current_neighbor and t_isInvalid[current_neighbor]) then -- If edge doesn't have neighbor OR if neighbor exist and it is not invalid then add as edge_boundary, else then the edge neighbor is an invalid triangle
+                    if not (current_neighbor and t_isInvalid[current_neighbor]) then -- If edge doesn't have neighbor OR if neighbor exist and it is not invalid then add as edge_boundary, else then the edge neighbor is an invalid triangle (Don't care about shared edge of invalid triangles)
                         edge_boundary_size = edge_boundary_size + 1
                         edge_boundary_neighbor[edge_boundary_size] = current_neighbor
                         edge_boundary_v1[edge_boundary_size] = triangles_vertices[j % 3 + 1][current_triangle]
@@ -254,7 +255,7 @@ function triangulation2_5d(max_triangle_size_squared)
             end
 
             batch_amount = 0
-            for i = 1, invalid_triangles_size do -- Queue invalid_triangles for removal in final mesh if part of said mesh, i.e. if isSurface. (Not part of Bowyer-Watson algorithm)
+            for i = 1, invalid_triangles_size do -- Queue invalid_triangles for removal in final mesh if isSurface
                 current_triangle = invalid_triangles[i]
                 if t_isSurface[current_triangle] then
                     delta_final_mesh_triangle_id.queue_pushLeft(current_triangle)
@@ -272,7 +273,7 @@ function triangulation2_5d(max_triangle_size_squared)
                 current_boundary_neighbor = edge_boundary_neighbor[i]
                 t_neighbor3[new_triangle] = current_boundary_neighbor
                 if current_boundary_neighbor then -- if neighbor exist then find correct index to set neighbor reference to new_triangle
-                    for j = 1, 3 do
+                    for j = 1, 3 do -- Find index to the not shared vertex of neighboring triangle
                         if not (t_v1[new_triangle] == triangles_vertices[j][current_boundary_neighbor] or t_v2[new_triangle] == triangles_vertices[j][current_boundary_neighbor]) then
                             triangles_neighbors[j][current_boundary_neighbor] = new_triangle
                             break
@@ -280,20 +281,24 @@ function triangulation2_5d(max_triangle_size_squared)
                     end
                 end
 
-                for j = 1, 2 do -- Setup neighboring between new triangles
+                for j = 1, 2 do -- Setup neighboring between new triangles.
+                    -- All new triangles share the 3rd vertex. There are always a minimum of 3 new triangles.
+                    -- Use hash table and add 1st and 2nd vertices of new_triangle.
+                    -- Same vertex will only be encountered 2 times, when iterated through all new_triangles.
+                    -- The 2nd time the same vertex is tried to be added, then you know the triangle edge pair and can setup neighbor references.
                     hash_index = triangles_vertices[j][new_triangle]
                     shared_triangle = edge_shared[hash_index]
-                    if shared_triangle then
-                        triangles_neighbors[j%2+1][new_triangle] = shared_triangle
-                        triangles_neighbors[j][shared_triangle] = new_triangle
-                        edge_shared[hash_index] = nil -- clear index so table hash can be reused next new point insertion
-                    else
-                        edge_shared[hash_index] = new_triangle
-                        v_near_triangle[hash_index] = new_triangle -- Update near triangle reference of vertex
+                    if shared_triangle then -- Same vertex encountered
+                        triangles_neighbors[j%2+1][new_triangle] = shared_triangle  -- 'j%2+1' index works due to all triangles having same winding order
+                        triangles_neighbors[j][shared_triangle] = new_triangle      -- 'j' index...
+                        edge_shared[hash_index] = nil                               -- clear index so hash table can be reused next new point insertion
+                    else -- First time seeing vertex
+                        edge_shared[hash_index] = new_triangle      -- Add first unencountered vertex to hash table
+                        v_near_triangle[hash_index] = new_triangle  -- Update near triangle reference of vertex
                     end
                 end
 
-                -- Test if triangle should be added to final mesh (Not part of Bowyer-Watson algorithm)
+                -- Test if triangle should be added to final mesh
                 adx, ady = pointSub(t_v2[new_triangle], t_v1[new_triangle])
                 bdx, bdy = pointSub(t_v3[new_triangle], t_v2[new_triangle])
                 cdx, cdy = pointSub(t_v1[new_triangle], t_v3[new_triangle])
@@ -308,7 +313,7 @@ function triangulation2_5d(max_triangle_size_squared)
                     or (ab*bc*ca / (2*(ab*(bc + ca) + bc*ca) -ab*ab -bc*bc -ca*ca))) < max_triangle_size_squared
                 then
                     if #finalMeshFreeID > 0 then
-                        t_isSurface[new_triangle] = table.remove(finalMeshFreeID)
+                        t_isSurface[new_triangle] = table.remove(finalMeshFreeID) -- pop stack
                     else
                         finalMeshID = finalMeshID + 1
                         t_isSurface[new_triangle] = finalMeshID
@@ -317,6 +322,7 @@ function triangulation2_5d(max_triangle_size_squared)
                     batch_amount = batch_amount + 1
                 end
             end
+
             delta_final_mesh_batch.queue_pushLeft(batch_amount)
             v_near_triangle[pointID] = new_triangle -- Set near triangle reference to new inserted point
         end
@@ -343,7 +349,7 @@ function onTick()
 
     accepted_points = 0
     if #triangulation_controller.DT_vertices[1] < 65536 then
-        for i = 1, 6 do -- 1-2 are primary lasers and 3-6 are buffer lasers, that will be tested if 1-2 fails filter, to try keep the scan at max.
+        for i = 1, 6 do -- Accepts first 2 valid points and discard other inputs
             cPBuffer = pointBuffer[i]
             for j = 1, 3 do
                 cPBuffer[j] = input.getNumber((i-1)*3 + j)
@@ -406,7 +412,7 @@ end
 ---@section __DEBUG__
 -- [[
 do -- run in VSCode with F6 and press/hold right click to place point(s) to triangulate
-    local triangulation_controller = triangulation2_5d(40^2)
+    local triangulation_controller = triangulation2_5d(30^2)
     local pointBuffer = {0,0,0}
     local triangleMeshID = {}
     local batch_sequence = true;
@@ -418,8 +424,8 @@ do -- run in VSCode with F6 and press/hold right click to place point(s) to tria
         pointBuffer[3] = touchY
 
         if isPressing then
-            local _, dist = triangulation_controller.DT_vertices_kdtree.IKDTree_nearestNeighbor(pointBuffer)
-            if dist > 4 then
+            local _, dist2 = triangulation_controller.DT_vertices_kdtree.IKDTree_nearestNeighbor(pointBuffer)
+            if dist2 > 4 then
                 triangulation_controller.DT_insert(pointBuffer)
 
                 for i = 1, triangulation_controller.DT_delta_final_mesh_batch.queue_size() do
