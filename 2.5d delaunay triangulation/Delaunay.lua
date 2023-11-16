@@ -410,9 +410,9 @@ end
 
 
 ---@section __DEBUG__
--- [[
+--[[
 do -- run in VSCode with F6 and press/hold right click to place point(s) to triangulate
-    require("JumperLib.DataStructures.JL_BVH")
+    --require("JumperLib.DataStructures.JL_BVH")
 
     local pointBuffer = {0,0,0}
     local AABB_min_buffer, AABB_max_buffer = {0,0,0}, {0,0,0}
@@ -503,7 +503,7 @@ do -- run in VSCode with F6 and press/hold right click to place point(s) to tria
                         local triangleID = triangulation_controller.DT_delta_final_mesh_triangle_id.queue_popRight()
                         if batch_sequence then
                             triangles.list_remove(DT_triangles[9][triangleID])
-                            bvh.BVH_remove(BVH_ID[DT_triangles[9][triangleID]])
+                            bvh.BVH_remove(BVH_ID[DT_triangles[9][triangleID] ])
                             triangulation_controller.DT_triangles.list_remove(triangleID) -- make old triangle data able to be overwritten
                         else
                             local v1, v2, v3 = DT_triangles[1][triangleID], DT_triangles[2][triangleID], DT_triangles[3][triangleID]
@@ -532,7 +532,7 @@ do -- run in VSCode with F6 and press/hold right click to place point(s) to tria
     function onDraw()
         local vx, vy = triangulation_controller.DT_vertices[1], triangulation_controller.DT_vertices[3]
         for k = 1, #triangle_buffer do
-            local t = DT_triangleID[triangle_buffer[k]]
+            local t = DT_triangleID[triangle_buffer[k] ]
             local tv1, tv2, tv3 = triangulation_controller.DT_triangles[1], triangulation_controller.DT_triangles[2], triangulation_controller.DT_triangles[3]
             screen.setColor(colorR[k], colorG[k], colorB[k])
             screen.drawTriangleF(vx[tv1[t] ], vy[tv1[t] ], vx[tv2[t] ], vy[tv2[t] ], vx[tv3[t] ], vy[tv3[t] ])
