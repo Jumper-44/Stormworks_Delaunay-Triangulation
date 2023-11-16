@@ -74,10 +74,6 @@ function initialize()
     vertices = list({v_x, v_y, v_z, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVisible, v_frame})
     triangles = list({t_v1, t_v2, t_v3, t_colorR, t_colorG, t_colorB, t_centroidDepth})
     frameCount = 0
-
-    for i = 1, 3 do
-        vertices.list_insert(vertex_buffer_list) -- super-triangle vertices
-    end
 end
 initialize()
 ---@cast vertices list
@@ -124,7 +120,7 @@ function add_triangle()
     temp = temp > 1 and colors[1] or colors[2]
 
     for i = 1, 3 do -- rgb
-        triangle_buffer_list[i+3] = (temp.flat[i]*t + temp.steep[i]*inv_t) * t*t*0.9 + 0.1
+        triangle_buffer_list[i+3] = (temp.flat[i]*t + temp.steep[i]*inv_t) * t*t*0.8 + 0.2
     end
 
     return triangles.list_insert(triangle_buffer_list)

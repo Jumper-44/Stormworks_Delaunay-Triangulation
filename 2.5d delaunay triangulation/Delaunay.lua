@@ -331,9 +331,9 @@ end
 
 
 
-local max_triangle_size_squared, point_min_density_squared = property.getNumber("Max_T"), property.getNumber("Min_D")
-local triangulation_controller, pointBuffer, batch_sequence, batch_rest, output_buffer = triangulation2_5d(max_triangle_size_squared), {{},{},{},{},{},{}}, true, 0, {}
-local accepted_points, cPBuffer, batch_add_ran, triangleID, output_buffer_pointer, _, dist
+max_triangle_size_squared = property.getNumber("Max_T")
+local triangulation_controller, pointBuffer, batch_sequence, batch_rest, output_buffer, point_min_density_squared = triangulation2_5d(max_triangle_size_squared), {{},{},{},{},{},{}}, true, 0, {}, property.getNumber("Min_D")
+local accepted_points, cPBuffer, batch_add_ran, triangleID, output_buffer_pointer, dist
 
 function onTick()
     if input.getBool(3) then -- if clear
@@ -348,7 +348,7 @@ function onTick()
     end
 
     accepted_points = 0
-    if #triangulation_controller.DT_vertices[1] < 65536 then
+    if #triangulation_controller.DT_vertices[1] < 65539 then -- 65539 = 2^16 + 3
         for i = 1, 6 do -- Accepts first 2 valid points and discard other inputs
             cPBuffer = pointBuffer[i]
             for j = 1, 3 do
@@ -383,10 +383,10 @@ function onTick()
             if batch_rest > 0 then
                 triangleID = triangulation_controller.DT_delta_final_mesh_triangle_id.queue_popRight()
                 if batch_sequence then -- add triangle
-                    output_buffer[output_buffer_pointer] = triangulation_controller.DT_triangles[1][triangleID] -- triangle vertex 1
+                    output_buffer[output_buffer_pointer] = triangulation_controller.DT_triangles[1][triangleID] - 3 -- triangle vertex 1
                     output_buffer_pointer = output_buffer_pointer + 1
-                    output_buffer[output_buffer_pointer] = triangulation_controller.DT_triangles[2][triangleID] -- triangle vertex 2
-                    output_buffer[30 + batch_add_ran] = triangulation_controller.DT_triangles[3][triangleID]    -- triangle vertex 3
+                    output_buffer[output_buffer_pointer] = triangulation_controller.DT_triangles[2][triangleID] - 3 -- triangle vertex 2
+                    output_buffer[30 + batch_add_ran] = triangulation_controller.DT_triangles[3][triangleID] - 3    -- triangle vertex 3
                 else -- remove triangle
                     output_buffer[output_buffer_pointer] = triangulation_controller.DT_triangles[9][triangleID] -- triangle final mesh id to be removed
                     triangulation_controller.DT_triangles.removed_id[#triangulation_controller.DT_triangles.removed_id] = triangleID -- make old triangle data able to be overwritten       -- inlined function: triangulation_controller.DT_triangles.list_remove(triangleID)
