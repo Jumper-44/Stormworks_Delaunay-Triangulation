@@ -48,11 +48,11 @@ do
         _isTouched = screenConnection.isTouched
 
         -- NEW! button/slider options from the UI
-        simulator:setInputBool(31, simulator:getIsClicked(1))       -- if button 1 is clicked, provide an ON pulse for input.getBool(31)
-        simulator:setInputNumber(31, simulator:getSlider(1))        -- set input 31 to the value of slider 1
+        simulator:setInputBool(32, simulator:getIsClicked(1))       -- if button 1 is clicked, provide an ON pulse for input.getBool(31)
+        simulator:setInputNumber(32, math.floor(simulator:getSlider(1)*20))        -- set input 31 to the value of slider 1
 
-        simulator:setInputBool(32, simulator:getIsToggled(2))       -- make button 2 a toggle, for input.getBool(32)
-        simulator:setInputNumber(32, simulator:getSlider(2) * 50)   -- set input 32 to the value from slider 2 * 50
+        --simulator:setInputBool(32, simulator:getIsToggled(2))       -- make button 2 a toggle, for input.getBool(32)
+        --simulator:setInputNumber(32, simulator:getSlider(2) * 50)   -- set input 32 to the value from slider 2 * 50
     end;
 end
 ---@endsection
@@ -412,21 +412,89 @@ end
 ---@section __DEBUG__
 -- [[
 do -- run in VSCode with F6 and press/hold right click to place point(s) to triangulate
-    local triangulation_controller = triangulation2_5d(30^2)
-    local pointBuffer = {0,0,0}
-    local triangleMeshID = {}
-    local batch_sequence = true;
+    require("JumperLib.DataStructures.JL_BVH")
 
+    local pointBuffer = {0,0,0}
+    local AABB_min_buffer, AABB_max_buffer = {0,0,0}, {0,0,0}
+
+    local triangulation_controller
+    local batch_sequence
+    local triangle_buffer
+
+    local bvh = BVH_AABB()
+    local BVH_ID, DT_triangleID, colorR, colorG, colorB
+    local triangles, triangles_buffer
+
+    local function initialize()
+        triangulation_controller = triangulation2_5d(30^2)
+        batch_sequence = true;
+        triangle_buffer = {}
+
+        bvh = BVH_AABB()
+        BVH_ID, DT_triangleID, colorR, colorG, colorB = {},{}, {},{},{}
+        triangles, triangles_buffer =
+            list({BVH_ID, DT_triangleID, colorR, colorG, colorB}),
+            {0,0, 0,0,0}
+    end
+    initialize()
+
+
+    ---comment
+    ---@param tree BoundingVolumeHierarchyAABB
+    ---@param maxDepth integer
+    local function readBVH(tree, maxDepth)
+        local _return = {}
+
+        local function readBVH_recursive(index, depth, cR, cG, cB)
+            if depth < maxDepth then
+                cR, cG, cB = depth*depth*10%200, 200-depth*9%200, math.random()*150 + 100
+            end
+
+            local tri = tree.BVH_nodes[4][index]
+            --local SAH = tree.BVH_nodes[5][index]
+            --if SAH < maxDepth*50 then
+            --    colorSet = true
+            --    cR, cG, cB = depth*depth*10%200, 200-depth*9%200, math.random()*150 + 100
+            --end
+
+            if tri == false then
+                depth = depth+1
+                readBVH_recursive(tree.BVH_nodes[1][index], depth, cR, cG, cB)
+                readBVH_recursive(tree.BVH_nodes[2][index], depth, cR, cG, cB)
+            else
+                _return[#_return+1] = tri
+                colorR[tri] = cR
+                colorG[tri] = cG
+                colorB[tri] = cB
+            end
+        end
+
+        if tree.BVH_rootIndex then
+            readBVH_recursive(tree.BVH_rootIndex, 0, 255, 255, 255)
+        end
+
+        return _return
+    end
+
+
+    local prev_depth, addedPoint = 0, false
     function onTick()
         local touchX, touchY, isPressing = input.getNumber(3), input.getNumber(4), input.getBool(1)
         pointBuffer[1] = touchX
-        pointBuffer[2] = math.random()
+        pointBuffer[2] = math.random()*1e-6
         pointBuffer[3] = touchY
+
+        local depth = input.getNumber(32)
+        local clear = input.getBool(32)
+        if clear then initialize() end
 
         if isPressing then
             local _, dist2 = triangulation_controller.DT_vertices_kdtree.IKDTree_nearestNeighbor(pointBuffer)
             if dist2 > 4 then
+                addedPoint = true
                 triangulation_controller.DT_insert(pointBuffer)
+                local DT_vertices = triangulation_controller.DT_vertices
+                local DT_triangles = triangulation_controller.DT_triangles
 
                 for i = 1, triangulation_controller.DT_delta_final_mesh_batch.queue_size() do
                     local batch_size = triangulation_controller.DT_delta_final_mesh_batch.queue_popRight()
@@ -434,33 +502,40 @@ do -- run in VSCode with F6 and press/hold right click to place point(s) to tria
                     for j = 1, batch_size do
                         local triangleID = triangulation_controller.DT_delta_final_mesh_triangle_id.queue_popRight()
                         if batch_sequence then
-                            triangleMeshID[triangleID] = nil -- rem from final mesh
+                            triangles.list_remove(DT_triangles[9][triangleID])
+                            bvh.BVH_remove(BVH_ID[DT_triangles[9][triangleID]])
                             triangulation_controller.DT_triangles.list_remove(triangleID) -- make old triangle data able to be overwritten
                         else
-                            triangleMeshID[triangleID] = true -- add
-                            --print(triangulation_controller.DT_triangles[9][triangleID]) -- debug print t_isSurface[triangleID]
+                            local v1, v2, v3 = DT_triangles[1][triangleID], DT_triangles[2][triangleID], DT_triangles[3][triangleID]
+                            for k = 1, 3 do
+                                AABB_min_buffer[k] = math.min(DT_vertices[k][v1], DT_vertices[k][v2], DT_vertices[k][v3])
+                                AABB_max_buffer[k] = math.max(DT_vertices[k][v1], DT_vertices[k][v2], DT_vertices[k][v3])
+                            end
+
+                            local new_t = triangles.list_insert(triangles_buffer)
+                            BVH_ID[new_t] = bvh.BVH_insert(new_t, AABB_min_buffer, AABB_max_buffer)
+                            DT_triangleID[new_t] = triangleID
                         end
                     end
                     batch_sequence = not batch_sequence
                 end
-
-                --for k in pairs(triangleMeshID) do --debug
-                --    for i = 4, 6 do
-                --        if triangulation_controller.triangles[8][ triangulation_controller.triangles[i][k] ] then
-                --            error("Triangles have reference to invalid triangles")
-                --        end
-                --    end
-                --end
             end
         end
+
+        if addedPoint or depth ~= prev_depth then
+            addedPoint = false
+            triangle_buffer = readBVH(bvh, depth)
+        end
+        prev_depth = depth
     end
 
     function onDraw()
         local vx, vy = triangulation_controller.DT_vertices[1], triangulation_controller.DT_vertices[3]
-        for k in pairs(triangleMeshID) do
+        for k = 1, #triangle_buffer do
+            local t = DT_triangleID[triangle_buffer[k]]
             local tv1, tv2, tv3 = triangulation_controller.DT_triangles[1], triangulation_controller.DT_triangles[2], triangulation_controller.DT_triangles[3]
-            screen.setColor(k*k%255, k*4%255, 100)
-            screen.drawTriangleF(vx[tv1[k] ], vy[tv1[k] ], vx[tv2[k] ], vy[tv2[k] ], vx[tv3[k] ], vy[tv3[k] ])
+            screen.setColor(colorR[k], colorG[k], colorB[k])
+            screen.drawTriangleF(vx[tv1[t] ], vy[tv1[t] ], vx[tv2[t] ], vy[tv2[t] ], vx[tv3[t] ], vy[tv3[t] ])
         end
 
         screen.setColor(255,255,255)
