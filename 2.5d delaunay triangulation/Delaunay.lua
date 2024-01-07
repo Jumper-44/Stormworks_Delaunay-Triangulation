@@ -63,16 +63,6 @@ end
 
 
 
--- Inlined int32_to_uint16. uint16_to_int32 not used.
--- Bitwise operations can only be done to integers, but also need to send the numbers as float when sending from script to script as Stormworks likes it that way.
---function int32_to_uint16(a, b) -- Takes 2 int32 and converts them to uint16 residing in a single number
---	return (('f'):unpack(('I'):pack( ((a&0xffff)<<16) | (b&0xffff)) ))
---end
---
---local function uint16_to_int32(x) -- Takes a single number containing 2 uint16 and unpacks them.
---	x = ('I'):unpack(('f'):pack(x))
---	return x>>16, x&0xffff
---end
 
 require("JumperLib.DataStructures.JL_kdtree")
 require("JumperLib.DataStructures.JL_queue")
@@ -397,7 +387,7 @@ function onTick()
         end
 
         if output_buffer_pointer % 2 == 0 then
-            output.setNumber(16 + output_buffer_pointer/2, (('f'):unpack(('I'):pack( ((output_buffer[output_buffer_pointer-1]&0xffff)<<16) | (output_buffer[output_buffer_pointer]&0xffff)) )))      -- inlined function: output.setNumber(22 + output_buffer_pointer/2, int32_to_uint16(output_buffer[output_buffer_pointer-1], output_buffer[output_buffer_pointer]))
+            output.setNumber(16 + output_buffer_pointer/2, (('f'):unpack(('I2I2'):pack(output_buffer[output_buffer_pointer-1], output_buffer[output_buffer_pointer] + output_buffer[output_buffer_pointer]//32640*64))))      -- inlined function: pack_uint16_pair_to_float(a, b)
             output.setBool(3 + output_buffer_pointer/2, batch_sequence)
         end
 
@@ -410,7 +400,7 @@ end
 
 
 ---@section __DEBUG__
---[[
+--[=[
 do -- run in VSCode with F6 and press/hold right click to place point(s) to triangulate
     --require("JumperLib.DataStructures.JL_BVH")
 
@@ -544,5 +534,5 @@ do -- run in VSCode with F6 and press/hold right click to place point(s) to tria
         end
     end
 end
---]]
+--]=]
 ---@endsection
