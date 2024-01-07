@@ -338,7 +338,7 @@ function onTick()
     end
 
     accepted_points = 0
-    if #triangulation_controller.DT_vertices[1] < 65539 then -- 65539 = 2^16 + 3
+    if #triangulation_controller.DT_vertices[1] < 65280 then -- 65280 = 2^16 - 256
         for i = 1, 6 do -- Accepts first 2 valid points and discard other inputs
             cPBuffer = pointBuffer[i]
             for j = 1, 3 do
