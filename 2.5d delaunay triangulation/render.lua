@@ -173,7 +173,7 @@ QuadTree = function()
 
     local nodes, newNodeBuffer, quadrants, bool2num =
         list({nCenterX, nCenterZ, nSize, nItems, nQuadrant1, nQuadrant2, nQuadrant3, nQuadrant4}),
-        {0, 0, 1e5, {}, false, false, false, false},
+        {0, 0, 3e5, {}, false, false, false, false},
         {nQuadrant1, nQuadrant2, nQuadrant3, nQuadrant4},
         {[false] = 0, [true] = 1}
 
@@ -246,7 +246,7 @@ QuadTree = function()
             currentNode = check_queue[check_queue_ptr]
             cx, cz, nodeSize = nCenterX[currentNode], nCenterZ[currentNode], nSize[currentNode]*2
 
-            for i = 1, #nItems[currentNode] do
+            for i = 1, #nItems[currentNode], bool2num[#triangle_buffer > max_drawn_triangles]+1 do
                 triangle_buffer[#triangle_buffer+1] = nItems[currentNode][i]
             end
 
@@ -300,7 +300,7 @@ QuadTree = function()
 
         while full_in_view_queue_ptr <= full_in_view_queue_size do
             currentNode = full_in_view_queue[full_in_view_queue_ptr]
-            for i = 1, #nItems[currentNode], #triangle_buffer < max_drawn_triangles and 1 or 2 do
+            for i = 1, #nItems[currentNode], bool2num[#triangle_buffer > max_drawn_triangles]+1 do
                 triangle_buffer[#triangle_buffer+1] = nItems[currentNode][i]
             end
 
