@@ -77,14 +77,14 @@ local v_x, v_y, v_z, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVisible, v_frame,
     vertices, triangles, quadTree, triangle_buffer,
     batch_sequence, batch_sequence_prev, batch_add_ran, v1, v2, v3,
     px_cx, px_cy, px_cx_pos, px_cy_pos,
-    temp
+    temp, adz, bdz, cdx, cdy, t, inv_t
 
 local vertex_buffer_list, triangle_buffer_list, cameraTransform, vertex3_buffer, frameCount, width, height, triangle_buffer_refreshrate, max_drawn_triangles, colors =
     {0,0,0, 0,0,0, false, false, 0}, -- vertex_buffer_list
     {0,0,0, 0,0,0, 0, 0},            -- triangle_buffer_list
     {}, -- cameraTransform
     {}, 0, -- vertex3_buffer, frameCount
-    property.getNumber("w"), property.getNumber("h"), property.getNumber("TBR"), property.getNumber("MDT"), -- width, height, triangle_buffer_refreshrate
+    property.getNumber("w"), property.getNumber("h"), property.getNumber("TBR"), property.getNumber("MDT"), -- width, height, triangle_buffer_refreshrate, max_drawn_triangles
     {{flat = {0,0,255}, steep = {0,150,255}}, {flat = {0,255,0}, steep = {255,200,0}}} -- colors = {color_water, color_ground}
 
 px_cx, px_cy = width/2, height/2
@@ -92,13 +92,13 @@ px_cx_pos, px_cy_pos = px_cx + property.getNumber("pxOffsetX"), px_cy + property
 
 
 WorldToScreen_triangles_sortFunction = function(t1, t2)
-    return t_centroidDepth[t1] > t_centroidDepth[t2]
+    return t_centroidDepth[t1] < t_centroidDepth[t2]
 end
 
 ---@param triangle_buffer table
 ---@return table
 WorldToScreen_triangles = function(triangle_buffer)
-    local new_triangle_buffer, refreshCurrentFrame, currentTriangle, vertex_id, X, Y, Z, W, v1, v2, v3
+    local new_triangle_buffer, refreshCurrentFrame, currentTriangle, vertex_id, X, Y, Z, W
     new_triangle_buffer = {}
     refreshCurrentFrame = frameCount % triangle_buffer_refreshrate == 0
 
@@ -153,8 +153,8 @@ WorldToScreen_triangles = function(triangle_buffer)
     if refreshCurrentFrame then
         table.sort(new_triangle_buffer, WorldToScreen_triangles_sortFunction) -- painter's algorithm | triangle centroid depth sort
 
-        for i = max_drawn_triangles, #triangle_buffer do
-            triangle_buffer[i] = nil
+        for i = max_drawn_triangles, #new_triangle_buffer do
+            new_triangle_buffer[i] = nil
         end
     end
 
@@ -162,14 +162,14 @@ WorldToScreen_triangles = function(triangle_buffer)
 end
 
 
----Need require("JumperLib.DataStructures.JL_list")
+---require "JumperLib.DataStructures.JL_list"
 ---@return table
 QuadTree = function()
-    local qt, nCenterX, nCenterZ, nSize, nItems, nQuadrant1, nQuadrant2, nQuadrant3, nQuadrant4, check_queue, full_in_view_queue, check_queue_ptr, full_in_view_queue_ptr, check_queue_size, full_in_view_queue_size, lookUpTable, frustumPlaneTest, currentNode, quadrant, partially_visible, fully_visible =
+    local qt, nCenterX, nCenterZ, nSize, nItems, nQuadrant1, nQuadrant2, nQuadrant3, nQuadrant4, check_queue, full_in_view_queue, check_queue_ptr, full_in_view_queue_ptr, check_queue_size, full_in_view_queue_size, lookUpTable, frustumPlaneTest, currentNode, quadrant, partially_visible, fully_visible, cx, cz, nodeSize, X, Y, Z, W =
         {},{},{},{},{},{},{},{},{}, -- qt, nCenterX, nCenterZ, nSize, nItems, nQuadrant1, nQuadrant2, nQuadrant3, nQuadrant4
         {1}, {}, 0, 0, 0, 0, -- check_queue, full_in_view_queue, check_queue_ptr, full_in_view_queue_ptr, check_queue_size, full_in_view_queue_size
-        {}, {}, -- lookUpTable, frustumPlaneTest
-        nil, nil, nil, nil  -- currentNode, quadrant, partially_visible, fully_visible
+        {}, {} -- lookUpTable, frustumPlaneTest
+        --, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil  -- currentNode, quadrant, partially_visible, fully_visible, cx, cz, nodeSize, X, Y, Z, W
 
     local nodes, newNodeBuffer, quadrants, bool2num =
         list({nCenterX, nCenterZ, nSize, nItems, nQuadrant1, nQuadrant2, nQuadrant3, nQuadrant4}),
@@ -177,7 +177,7 @@ QuadTree = function()
         {nQuadrant1, nQuadrant2, nQuadrant3, nQuadrant4},
         {[false] = 0, [true] = 1}
 
-    nodes.list_insert(newNodeBuffer)
+    nodes.list_insert(newNodeBuffer) -- init root node
 
     ---comment
     ---@param triangleID integer
@@ -186,7 +186,7 @@ QuadTree = function()
         currentNode = 1
 
         while true do
-            -- Assuming currentNode center is the origin, then check which quadrant the triangle lies on (XZ plane) or intersect multiple quadrants.
+            -- Assuming currentNode center is the (relative) origin, then check which quadrant the triangle lies on (XZ plane) or intersect multiple quadrants.
             local x_positive, z_positive, nodeSize = 0, 0, nSize[currentNode]
             for i = 1, 3 do
                 temp = triangles[i][triangleID]
@@ -208,8 +208,7 @@ QuadTree = function()
                     currentNode = temp
                 end
             else
-                temp = nItems[currentNode]
-                temp[#temp+1] = triangleID
+                nItems[currentNode][#nItems[currentNode]+1] = triangleID
                 t_quadtree_id[triangleID] = currentNode
                 return currentNode
             end
@@ -229,7 +228,9 @@ QuadTree = function()
         end
     end
 
-    ---comment
+    ---https://web.archive.org/web/20030810032130/http://www.markmorley.com:80/opengl/frustumculling.html  
+    ---Frustum culling in clip space instead of extracting frustum planes.  
+    ---A quad node height is implicitly 0.
     ---@param triangle_buffer table
     qt.QuadTree_frustumcull = function(triangle_buffer)
         check_queue_ptr = 1
@@ -243,7 +244,7 @@ QuadTree = function()
             end
 
             currentNode = check_queue[check_queue_ptr]
-            local cx, cz, nodeSize = nCenterX[currentNode], nCenterZ[currentNode], nSize[currentNode]*2
+            cx, cz, nodeSize = nCenterX[currentNode], nCenterZ[currentNode], nSize[currentNode]*2
 
             for i = 1, #nItems[currentNode] do
                 triangle_buffer[#triangle_buffer+1] = nItems[currentNode][i]
@@ -253,15 +254,14 @@ QuadTree = function()
             lookUpTable[2] = -nodeSize
 
             for i = 1, 4 do
-                local x, z = cx + lookUpTable[i&2], cz + lookUpTable[-i&2] -- quad corner
+                X, Z = cx + lookUpTable[i&2], cz + lookUpTable[-i&2] -- quad corner
 
-                local X, Y, Z, W =
-                    cameraTransform[1]*x + cameraTransform[9 ]*z + cameraTransform[13],
-                    cameraTransform[2]*x + cameraTransform[10]*z + cameraTransform[14],
-                    cameraTransform[3]*x + cameraTransform[11]*z + cameraTransform[15],
-                    cameraTransform[4]*x + cameraTransform[12]*z + cameraTransform[16]
+                X, Y, Z, W =
+                    cameraTransform[1]*X + cameraTransform[9 ]*Z + cameraTransform[13],
+                    cameraTransform[2]*X + cameraTransform[10]*Z + cameraTransform[14],
+                    cameraTransform[3]*X + cameraTransform[11]*Z + cameraTransform[15],
+                    cameraTransform[4]*X + cameraTransform[12]*Z + cameraTransform[16]
 
-                -- https://web.archive.org/web/20030810032130/http://www.markmorley.com:80/opengl/frustumculling.html
                 frustumPlaneTest[1] = frustumPlaneTest[1] + bool2num[-W<=X]
                 frustumPlaneTest[2] = frustumPlaneTest[2] + bool2num[X<=W]
                 frustumPlaneTest[3] = frustumPlaneTest[3] + bool2num[-W<=Y]
@@ -300,10 +300,10 @@ QuadTree = function()
 
         while full_in_view_queue_ptr <= full_in_view_queue_size do
             currentNode = full_in_view_queue[full_in_view_queue_ptr]
-            for i = 1, #nItems[currentNode] do
+            for i = 1, #nItems[currentNode], #triangle_buffer < max_drawn_triangles and 1 or 2 do
                 triangle_buffer[#triangle_buffer+1] = nItems[currentNode][i]
             end
-    
+
             for i = 1, 4 do
                 temp = quadrants[i][currentNode]
                 if temp then
@@ -311,7 +311,7 @@ QuadTree = function()
                     full_in_view_queue[full_in_view_queue_size] = temp
                 end
             end
-    
+
             full_in_view_queue_ptr = full_in_view_queue_ptr + 1
         end
     end
@@ -335,6 +335,7 @@ function onTick()
     if input.getBool(3) then -- reset/clear data
         initialize()
     end
+    drawWireframe = input.getBool(4)
 
     if renderOn then
         for i = 1, 16 do
@@ -349,7 +350,7 @@ function onTick()
         frameCount = frameCount + 1
     end
 
-    temp = input.getBool(21) and (input.getBool(22) and 0 or 3) or 6
+    temp = input.getBool(22) and (input.getBool(23) and 0 or 3) or 6
     for i = 16, 21-temp, 3 do -- get point(s)
         for j = 1, 3 do
             vertex_buffer_list[j] = input.getNumber(i + j)
@@ -362,7 +363,7 @@ function onTick()
     vertex3_buffer[1], vertex3_buffer[2] = unpack_float_to_uint16_pair(input.getNumber(32))
     batch_add_ran = 0
     for i = 7-temp, 15 do
-        batch_sequence = input.getBool(3 + i)
+        batch_sequence = input.getBool(4 + i)
         if batch_sequence and not batch_sequence_prev then
             batch_add_ran = batch_add_ran + 1
 
@@ -374,7 +375,6 @@ function onTick()
         v1, v2 = unpack_float_to_uint16_pair(input.getNumber(i + 16))
         if v1 > 0 then
             if batch_sequence then -- triangle_data2 is assumed not 0
-                local adz, bdz, cdx, cdy, t, inv_t
                 triangle_buffer_list[1] = v1
                 triangle_buffer_list[2] = v2
 
@@ -414,21 +414,25 @@ triangle_buffer_len_debug = 0 -- debug
 
 function onDraw()
     if renderOn then
-        triangle_buffer = WorldToScreen_triangles(triangle_buffer)
-        for i = 1, #triangle_buffer do
-            local tri = triangle_buffer[i]
-            v1, v2, v3 = t_v1[tri], t_v2[tri], t_v3[tri]
+        local setColor, drawTriangle =
+            screen.setColor,
+            drawWireframe and screen.drawTriangle or screen.drawTriangleF
 
-            screen.setColor(t_colorR[tri], t_colorG[tri], t_colorB[tri])
-            screen.drawTriangleF(v_sx[v1], v_sy[v1], v_sx[v2], v_sy[v2], v_sx[v3], v_sy[v3])
+        triangle_buffer = WorldToScreen_triangles(triangle_buffer)
+        for i = #triangle_buffer, 1, -1 do
+            temp = triangle_buffer[i]
+            v1, v2, v3 = t_v1[temp], t_v2[temp], t_v3[temp]
+
+            setColor(t_colorR[temp], t_colorG[temp], t_colorB[temp])
+            drawTriangle(v_sx[v1], v_sy[v1], v_sx[v2], v_sy[v2], v_sx[v3], v_sy[v3])
         end
-        screen.setColor(0, 0, 0, color_alpha)
+        setColor(0, 0, 0, color_alpha)
         screen.drawRectF(0, 0, width, height)
 
         -- [[ debug
-        screen.setColor(255,255,255,125)
+        setColor(255,255,255,125)
         screen.drawText(0,height-15, "A "..color_alpha)
-        screen.drawText(0,height-7, "Tri "..#triangle_buffer.."/"..triangle_buffer_len_debug)
+        screen.drawText(0,height-7, "T "..#triangle_buffer.."/"..triangle_buffer_len_debug)
         -- ]]
     end
 end

@@ -333,7 +333,7 @@ function onTick()
     end
 
     for i = 1, 32 do
-        output.setBool(i, input.getBool(i)) -- Passthrough bool channel: [1,3] = renderOn, isFemale, clear.  Reset/false = [4,24].  uint8 = [25,32]
+        output.setBool(i, input.getBool(i)) -- Passthrough bool channel: [1,4] = renderOn, isFemale, clear, drawWireframe.  Reset/false = [4,24].  uint8 = [25,32]
         output_buffer[i] = 0 -- clear buffer
     end
 
@@ -353,7 +353,7 @@ function onTick()
                         output.setNumber(16 + j + accepted_points*3, cPBuffer[j]) -- [17,22]
                     end
                     accepted_points = accepted_points + 1
-                    output.setBool(20 + accepted_points, true) -- [21,22]
+                    output.setBool(21 + accepted_points, true) -- [22,23]
                     if accepted_points == 2 then break end
                 end
             end
@@ -388,7 +388,7 @@ function onTick()
 
         if output_buffer_pointer % 2 == 0 then
             output.setNumber(16 + output_buffer_pointer/2, (('f'):unpack(('I2I2'):pack(output_buffer[output_buffer_pointer-1], output_buffer[output_buffer_pointer] + output_buffer[output_buffer_pointer]//32640*64))))      -- inlined function: pack_uint16_pair_to_float(a, b)
-            output.setBool(3 + output_buffer_pointer/2, batch_sequence)
+            output.setBool(4 + output_buffer_pointer/2, batch_sequence)
         end
 
         output_buffer_pointer = output_buffer_pointer + 1
