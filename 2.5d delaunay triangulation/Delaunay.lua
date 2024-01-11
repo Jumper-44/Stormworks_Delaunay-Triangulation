@@ -338,7 +338,7 @@ function onTick()
     end
 
     accepted_points = 0
-    if #triangulation_controller.DT_vertices[1] < 65280 then -- 65280 = 2^16 - 256
+    if #triangulation_controller.DT_vertices[1] < 65280 and (triangulation_controller.DT_delta_final_mesh_batch.last - triangulation_controller.DT_delta_final_mesh_batch.first < 99) then -- Only accept new point if current point cloud size is less than (65280 = 2^16 - 256) and (triangle data batch queue size) is less than 98
         for i = 1, 6 do -- Accepts first 2 valid points and discard other inputs
             cPBuffer = pointBuffer[i]
             for j = 1, 3 do
