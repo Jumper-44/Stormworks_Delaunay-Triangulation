@@ -173,7 +173,7 @@ QuadTree = function()
 
     local nodes, newNodeBuffer, quadrants, bool2num =
         list({nCenterX, nCenterZ, nSize, nItems, nQuadrant1, nQuadrant2, nQuadrant3, nQuadrant4}),
-        {0, 0, 3e5, {}, false, false, false, false},
+        {0, 0, 3e5, false, false, false, false, false},
         {nQuadrant1, nQuadrant2, nQuadrant3, nQuadrant4},
         {[false] = 0, [true] = 1}
 
@@ -184,35 +184,31 @@ QuadTree = function()
     ---@return integer nodeID
     qt.QuadTree_insert = function(triangleID)
         currentNode = 1
+        X = (v_x[t_v1[triangleID]] + v_x[t_v2[triangleID]] + v_x[t_v3[triangleID]])/3
+        Z = (v_z[t_v1[triangleID]] + v_z[t_v2[triangleID]] + v_z[t_v3[triangleID]])/3
 
-        while true do
-            -- Assuming currentNode center is the (relative) origin, then check which quadrant the triangle lies on (XZ plane) or intersect multiple quadrants.
-            local x_positive, z_positive, nodeSize = 0, 0, nSize[currentNode]
-            for i = 1, 3 do
-                temp = triangles[i][triangleID]
-                x_positive = x_positive + bool2num[v_x[temp] >= nCenterX[currentNode]]
-                z_positive = z_positive + bool2num[v_z[temp] >= nCenterZ[currentNode]]
-            end
-
-            if x_positive%3 == 0 and z_positive%3 == 0 and nodeSize > 32 then -- if triangle fit in a quadrant and currentNode is not too small then continue traverse quadtree
-                quadrant = quadrants[(z_positive==3 and 1 or 3) + bool2num[x_positive~=z_positive]]
-                if quadrant[currentNode] then -- does quad-node exist
-                    currentNode = quadrant[currentNode]
-                else -- create new quad-node
-                    newNodeBuffer[1] = nCenterX[currentNode] + (x_positive==3 and nodeSize or -nodeSize)
-                    newNodeBuffer[2] = nCenterZ[currentNode] + (z_positive==3 and nodeSize or -nodeSize)
-                    newNodeBuffer[3] = nodeSize/2
-                    newNodeBuffer[4] = {}
-                    temp = nodes.list_insert(newNodeBuffer)
-                    quadrant[currentNode] = temp
-                    currentNode = temp
-                end
+        repeat
+            cx = nCenterX[currentNode] < X
+            cz = nCenterZ[currentNode] < Z
+            quadrant = quadrants[bool2num[cx]*2 + bool2num[cz] + 1]
+            if quadrant[currentNode] then
+                currentNode = quadrant[currentNode]
             else
-                nItems[currentNode][#nItems[currentNode]+1] = triangleID
-                t_quadtree_id[triangleID] = currentNode
-                return currentNode
+                nodeSize = nSize[currentNode]
+                newNodeBuffer[1] = nCenterX[currentNode] + (cx and nodeSize or -nodeSize)
+                newNodeBuffer[2] = nCenterZ[currentNode] + (cz and nodeSize or -nodeSize)
+                newNodeBuffer[3] = nodeSize * 0.5
+                newNodeBuffer[4] = nodeSize < 32 and {} or false -- if nodeSize is less than 32 then create leaf node
+
+                temp = nodes.list_insert(newNodeBuffer)
+                quadrant[currentNode] = temp
+                currentNode = temp
             end
-        end
+        until nItems[currentNode]
+
+        nItems[currentNode][#nItems[currentNode]+1] = triangleID
+        t_quadtree_id[triangleID] = currentNode
+        return currentNode
     end
 
     ---comment
@@ -239,58 +235,59 @@ QuadTree = function()
         full_in_view_queue_size = 0
 
         repeat
-            for i = 1, 6 do
-                frustumPlaneTest[i] = 0
-            end
-
             currentNode = check_queue[check_queue_ptr]
-            cx, cz, nodeSize = nCenterX[currentNode], nCenterZ[currentNode], nSize[currentNode]*2
-
-            for i = 1, #nItems[currentNode], bool2num[#triangle_buffer > max_drawn_triangles]+1 do
-                triangle_buffer[#triangle_buffer+1] = nItems[currentNode][i]
-            end
-
-            lookUpTable[0] = nodeSize
-            lookUpTable[2] = -nodeSize
-
-            for i = 1, 4 do
-                X, Z = cx + lookUpTable[i&2], cz + lookUpTable[-i&2] -- quad corner
-
-                X, Y, Z, W =
-                    cameraTransform[1]*X + cameraTransform[9 ]*Z + cameraTransform[13],
-                    cameraTransform[2]*X + cameraTransform[10]*Z + cameraTransform[14],
-                    cameraTransform[3]*X + cameraTransform[11]*Z + cameraTransform[15],
-                    cameraTransform[4]*X + cameraTransform[12]*Z + cameraTransform[16]
-
-                frustumPlaneTest[1] = frustumPlaneTest[1] + bool2num[-W<=X]
-                frustumPlaneTest[2] = frustumPlaneTest[2] + bool2num[X<=W]
-                frustumPlaneTest[3] = frustumPlaneTest[3] + bool2num[-W<=Y]
-                frustumPlaneTest[4] = frustumPlaneTest[4] + bool2num[Y<=W]
-                frustumPlaneTest[5] = frustumPlaneTest[5] + bool2num[0<=Z]
-                frustumPlaneTest[6] = frustumPlaneTest[6] + bool2num[Z<=W]
-            end
-
-            partially_visible = true
-            fully_visible = true
-            for i = 1, 6 do
-                if frustumPlaneTest[i] == 0 then
-                    partially_visible = false
-                    fully_visible = false
-                    break
-                elseif frustumPlaneTest[i] ~= 4 then
-                    fully_visible = false
+            if nItems[currentNode] then -- is leaf node?
+                for i = 1, #nItems[currentNode], bool2num[#triangle_buffer > max_drawn_triangles]+1 do
+                    triangle_buffer[#triangle_buffer+1] = nItems[currentNode][i]
                 end
-            end
+            else
+                for i = 1, 6 do
+                    frustumPlaneTest[i] = 0
+                end
 
-            if fully_visible then
-                full_in_view_queue_size = full_in_view_queue_size + 1
-                full_in_view_queue[full_in_view_queue_size] = currentNode
-            elseif partially_visible then
+                cx, cz, nodeSize = nCenterX[currentNode], nCenterZ[currentNode], nSize[currentNode]*2
+                lookUpTable[0] = nodeSize
+                lookUpTable[2] = -nodeSize
+
                 for i = 1, 4 do
-                    temp = quadrants[i][currentNode]
-                    if temp then
-                        check_queue_size = check_queue_size + 1
-                        check_queue[check_queue_size] = temp
+                    X, Z = cx + lookUpTable[i&2], cz + lookUpTable[-i&2] -- quad corner
+
+                    X, Y, Z, W =
+                        cameraTransform[1]*X + cameraTransform[9 ]*Z + cameraTransform[13],
+                        cameraTransform[2]*X + cameraTransform[10]*Z + cameraTransform[14],
+                        cameraTransform[3]*X + cameraTransform[11]*Z + cameraTransform[15],
+                        cameraTransform[4]*X + cameraTransform[12]*Z + cameraTransform[16]
+
+                    frustumPlaneTest[1] = frustumPlaneTest[1] + bool2num[-W<=X]
+                    frustumPlaneTest[2] = frustumPlaneTest[2] + bool2num[X<=W]
+                    frustumPlaneTest[3] = frustumPlaneTest[3] + bool2num[-W<=Y]
+                    frustumPlaneTest[4] = frustumPlaneTest[4] + bool2num[Y<=W]
+                    frustumPlaneTest[5] = frustumPlaneTest[5] + bool2num[0<=Z]
+                    frustumPlaneTest[6] = frustumPlaneTest[6] + bool2num[Z<=W]
+                end
+
+                partially_visible = true
+                fully_visible = true
+                for i = 1, 6 do
+                    if frustumPlaneTest[i] == 0 then
+                        partially_visible = false
+                        fully_visible = false
+                        break
+                    elseif frustumPlaneTest[i] ~= 4 then
+                        fully_visible = false
+                    end
+                end
+
+                if fully_visible then
+                    full_in_view_queue_size = full_in_view_queue_size + 1
+                    full_in_view_queue[full_in_view_queue_size] = currentNode
+                elseif partially_visible then
+                    for i = 1, 4 do
+                        temp = quadrants[i][currentNode]
+                        if temp then
+                            check_queue_size = check_queue_size + 1
+                            check_queue[check_queue_size] = temp
+                        end
                     end
                 end
             end
@@ -300,15 +297,17 @@ QuadTree = function()
 
         while full_in_view_queue_ptr <= full_in_view_queue_size do
             currentNode = full_in_view_queue[full_in_view_queue_ptr]
-            for i = 1, #nItems[currentNode], bool2num[#triangle_buffer > max_drawn_triangles]+1 do
-                triangle_buffer[#triangle_buffer+1] = nItems[currentNode][i]
-            end
-
-            for i = 1, 4 do
-                temp = quadrants[i][currentNode]
-                if temp then
-                    full_in_view_queue_size = full_in_view_queue_size + 1
-                    full_in_view_queue[full_in_view_queue_size] = temp
+            if nItems[currentNode] then -- is leaf node?
+                for i = 1, #nItems[currentNode], bool2num[#triangle_buffer > max_drawn_triangles]+1 do
+                    triangle_buffer[#triangle_buffer+1] = nItems[currentNode][i]
+                end
+            else
+                for i = 1, 4 do
+                    temp = quadrants[i][currentNode]
+                    if temp then
+                        full_in_view_queue_size = full_in_view_queue_size + 1
+                        full_in_view_queue[full_in_view_queue_size] = temp
+                    end
                 end
             end
 
@@ -430,7 +429,7 @@ function onDraw()
         screen.drawRectF(0, 0, width, height)
 
         -- [[ debug
-        setColor(255,255,255,125)
+        setColor(255,255,255,100)
         screen.drawText(0,height-15, "A "..color_alpha)
         screen.drawText(0,height-7, "T "..#triangle_buffer.."/"..triangle_buffer_len_debug)
         -- ]]
