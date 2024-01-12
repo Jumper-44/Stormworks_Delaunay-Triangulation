@@ -204,7 +204,7 @@ QuadTree = function()
                 quadrant[currentNode] = temp
                 currentNode = temp
             end
-        until nItems[currentNode]
+        until nItems[currentNode] -- until in leaf node
 
         nItems[currentNode][#nItems[currentNode]+1] = triangleID
         t_quadtree_id[triangleID] = currentNode
@@ -230,7 +230,7 @@ QuadTree = function()
     ---@param triangle_buffer table
     qt.QuadTree_frustumcull = function(triangle_buffer)
         check_queue_ptr = 1
-        check_queue_size = 1 -- Has root node
+        check_queue_size = 1 -- Has root node in queue
         full_in_view_queue_ptr = 1
         full_in_view_queue_size = 0
 
@@ -283,17 +283,17 @@ QuadTree = function()
                     full_in_view_queue[full_in_view_queue_size] = currentNode
                 elseif partially_visible then
                     for i = 1, 4 do
-                        temp = quadrants[i][currentNode]
-                        if temp then
+                        quadrant = quadrants[i][currentNode]
+                        if quadrant then
                             check_queue_size = check_queue_size + 1
-                            check_queue[check_queue_size] = temp
+                            check_queue[check_queue_size] = quadrant
                         end
                     end
                 end
             end
 
             check_queue_ptr = check_queue_ptr + 1
-        until check_queue_ptr > #check_queue
+        until check_queue_ptr > check_queue_size
 
         while full_in_view_queue_ptr <= full_in_view_queue_size do
             currentNode = full_in_view_queue[full_in_view_queue_ptr]
@@ -303,10 +303,10 @@ QuadTree = function()
                 end
             else
                 for i = 1, 4 do
-                    temp = quadrants[i][currentNode]
-                    if temp then
+                    quadrant = quadrants[i][currentNode]
+                    if quadrant then
                         full_in_view_queue_size = full_in_view_queue_size + 1
-                        full_in_view_queue[full_in_view_queue_size] = temp
+                        full_in_view_queue[full_in_view_queue_size] = quadrant
                     end
                 end
             end
@@ -392,7 +392,7 @@ function onTick()
                 temp = 0 > (v_y[v1] + v_y[v2] + v_y[v3]) and colors[1] or colors[2] -- is triangle centroid center less than 0, i.e. underwater
 
                 for j = 1, 3 do
-                    triangle_buffer_list[j+3] = (temp.flat[j]*t + temp.steep[j]*inv_t) * t*t*0.8 + 0.2 -- rgb
+                    triangle_buffer_list[j+3] = (temp.flat[j]*t + temp.steep[j]*inv_t) * t*t*0.7 + 0.3 -- rgb
                 end
 
                 temp = triangles.list_insert(triangle_buffer_list)
@@ -429,9 +429,9 @@ function onDraw()
         screen.drawRectF(0, 0, width, height)
 
         -- [[ debug
-        setColor(255,255,255,100)
-        screen.drawText(0,height-15, "A "..color_alpha)
-        screen.drawText(0,height-7, "T "..#triangle_buffer.."/"..triangle_buffer_len_debug)
+        setColor(255,255,255,99)
+        --screen.drawText(0,height-15, "A "..color_alpha)
+        screen.drawText(0,height-7, ("%i/%i/%i"):format(#t_quadtree_id, triangle_buffer_len_debug, #triangle_buffer))
         -- ]]
     end
 end
