@@ -74,15 +74,15 @@ require("JumperLib.DataStructures.JL_list")
 
 local v_x, v_y, v_z, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVisible, v_frame,
     t_v1, t_v2, t_v3, t_colorR, t_colorG, t_colorB, t_centroidDepth, t_quadtree_id,
-    vertices, triangles, quadTree, triangle_buffer,
-    batch_sequence, batch_sequence_prev, batch_add_ran, v1, v2, v3,
-    px_cx, px_cy, px_cx_pos, px_cy_pos,
-    temp, adz, bdz, cdx, cdy, t, inv_t
+    px_cx, px_cy, px_cx_pos, px_cy_pos, temp
+--    vertices, triangles, quadTree, triangle_buffer,
+--    batch_sequence, batch_sequence_prev, batch_add_ran, v1, v2, v3,
+--    adz, bdz, cdx, cdy, t, inv_t
 
-local vertex_buffer_list, triangle_buffer_list, cameraTransform, vertex3_buffer, frameCount, width, height, triangle_buffer_refreshrate, max_drawn_triangles, colors =
+local vertex_buffer_list, triangle_buffer_list, camera_data, vertex3_buffer, frameCount, width, height, triangle_buffer_refreshrate, max_drawn_triangles, colors =
     {0,0,0, 0,0,0, false, false, 0}, -- vertex_buffer_list
     {0,0,0, 0,0,0, 0, 0},            -- triangle_buffer_list
-    {}, -- cameraTransform
+    {}, -- camera_data
     {}, 0, -- vertex3_buffer, frameCount
     property.getNumber("w"), property.getNumber("h"), property.getNumber("TBR"), property.getNumber("MDT"), -- width, height, triangle_buffer_refreshrate, max_drawn_triangles
     {{flat = {0,0,255}, steep = {0,150,255}}, {flat = {0,255,0}, steep = {255,200,0}}} -- colors = {color_water, color_ground}
@@ -120,12 +120,16 @@ WorldToScreen_triangles = function(triangle_buffer)
             if v_frame[vertex_id] ~= frameCount then -- is the transformed vertex NOT already calculated
                 v_frame[vertex_id] = frameCount
 
-                X, Y, Z = v_x[vertex_id], v_y[vertex_id], v_z[vertex_id]
+                X, Y, Z =
+                    v_x[vertex_id] - camera_data[14],
+                    v_y[vertex_id] - camera_data[15],
+                    v_z[vertex_id] - camera_data[16]
+
                 X, Y, Z, W =
-                    cameraTransform[1]*X + cameraTransform[5]*Y + cameraTransform[9 ]*Z + cameraTransform[13],
-                    cameraTransform[2]*X + cameraTransform[6]*Y + cameraTransform[10]*Z + cameraTransform[14],
-                    cameraTransform[3]*X + cameraTransform[7]*Y + cameraTransform[11]*Z + cameraTransform[15],
-                    cameraTransform[4]*X + cameraTransform[8]*Y + cameraTransform[12]*Z + cameraTransform[16]
+                    camera_data[1]*X + camera_data[5]*Y + camera_data[9 ]*Z,
+                    camera_data[2]*X + camera_data[6]*Y + camera_data[10]*Z,
+                    camera_data[3]*X + camera_data[7]*Y + camera_data[11]*Z + camera_data[13],
+                    camera_data[4]*X + camera_data[8]*Y + camera_data[12]*Z
 
                 v_inNearAndFar[vertex_id] = 0<=Z and Z<=W
                 if v_inNearAndFar[vertex_id] then -- Is vertex between near and far plane
@@ -234,6 +238,12 @@ QuadTree = function()
         full_in_view_queue_ptr = 1
         full_in_view_queue_size = 0
 
+        temp = -2 - math.max(camera_data[15], 0)
+        y1 = temp * camera_data[5]
+        y2 = temp * camera_data[6]
+        y3 = temp * camera_data[7]
+        y4 = temp * camera_data[8]
+
         repeat
             currentNode = check_queue[check_queue_ptr]
             if nItems[currentNode] then -- is leaf node?
@@ -250,13 +260,15 @@ QuadTree = function()
                 lookUpTable[2] = -nodeSize
 
                 for i = 1, 4 do
-                    X, Z = cx + lookUpTable[i&2], cz + lookUpTable[-i&2] -- quad corner
+                    X, Z = -- quad corner
+                        cx + lookUpTable[i&2]  - camera_data[14],
+                        cz + lookUpTable[-i&2] - camera_data[16]
 
                     X, Y, Z, W =
-                        cameraTransform[1]*X + cameraTransform[9 ]*Z + cameraTransform[13],
-                        cameraTransform[2]*X + cameraTransform[10]*Z + cameraTransform[14],
-                        cameraTransform[3]*X + cameraTransform[11]*Z + cameraTransform[15],
-                        cameraTransform[4]*X + cameraTransform[12]*Z + cameraTransform[16]
+                        camera_data[1]*X + camera_data[9 ]*Z + y1,
+                        camera_data[2]*X + camera_data[10]*Z + y2,
+                        camera_data[3]*X + camera_data[11]*Z + y3 + camera_data[13],
+                        camera_data[4]*X + camera_data[12]*Z + y4
 
                     frustumPlaneTest[1] = frustumPlaneTest[1] + bool2num[-W<=X]
                     frustumPlaneTest[2] = frustumPlaneTest[2] + bool2num[X<=W]
@@ -338,7 +350,7 @@ function onTick()
 
     if renderOn then
         for i = 1, 16 do
-            cameraTransform[i] = input.getNumber(i)
+            camera_data[i] = input.getNumber(i)
         end
 
         color_alpha = 0

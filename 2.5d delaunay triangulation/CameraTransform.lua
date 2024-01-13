@@ -143,18 +143,24 @@ function onTick()
                 cameraTranslation -- return
             )
 
-            vec_scale(cameraTranslation, -1, translationMatrix[4]) -- set translation in translationMatrix
+            --vec_scale(cameraTranslation, -1, translationMatrix[4]) -- set translation in translationMatrix
 
             -- cameraTransformMatrix = perspectiveProjectionMatrix * rotationMatrixZYX^T * translationMatrix
-            matrix_mult(matrix_transpose(rotationMatrixZYX, tempMatrix1_4x4), translationMatrix, tempMatrix2_4x4)
-            matrix_mult(perspectiveProjectionMatrix, tempMatrix2_4x4, cameraTransformMatrix)
+            --matrix_mult(matrix_transpose(rotationMatrixZYX, tempMatrix1_4x4), translationMatrix, tempMatrix2_4x4)
+            --matrix_mult(perspectiveProjectionMatrix, tempMatrix2_4x4, cameraTransformMatrix)
+
+            matrix_mult(perspectiveProjectionMatrix, matrix_transpose(rotationMatrixZYX, tempMatrix1_4x4), cameraTransformMatrix)
         end
 
-        for i = 1, 4 do
+        for i = 1, 3 do
             for j = 1, 4 do
                 output.setNumber((i-1)*4 + j, cameraTransformMatrix[i][j])
             end
         end
+        output.setNumber(13, cameraTransformMatrix[4][3])
+        output.setNumber(14, cameraTranslation[1])
+        output.setNumber(15, cameraTranslation[2])
+        output.setNumber(16, cameraTranslation[3])
     end
 
 end
