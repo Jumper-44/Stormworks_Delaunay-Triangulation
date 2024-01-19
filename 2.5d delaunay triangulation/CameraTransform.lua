@@ -21,7 +21,7 @@ do
     simulator:setProperty("w", 160)                 -- Pixel width of screen
     simulator:setProperty("h", 160)                 -- Pixel height of screen
     simulator:setProperty("near", 0.25)             -- Distance to near plane in meters, but added offset later on. So "near" is the distance from the end of (compact) seat model to the screen. I.e how many blocks between (compact) seat and screen divided by 4.
-    simulator:setProperty("far", 1000)              -- Distance to far plane in meters, max render distance
+    simulator:setProperty("far", 25)              -- Distance to far plane in meters, max render distance
     simulator:setProperty("sizeX", 0.71)            -- Physical sizeX/width of screen in meters. (Important that it is the actual screen part with pixels and not model width)
     simulator:setProperty("sizeY", 0.71)            -- Physical sizeY/height of screen in meters. (Important that it is the actual screen part with pixels and not model height)
     simulator:setProperty("positionOffsetX", 0)     -- Physical offset in the XY plane along X:right in meters.
@@ -37,9 +37,9 @@ do
         simulator:setInputBool(1, true) -- isRendering = true
 
                                                                             -- Debug sliders
-        simulator:setInputNumber(1, (simulator:getSlider(1) - 0) * 10)      -- x position
-        simulator:setInputNumber(2, (simulator:getSlider(2) - 0) * 10)      -- y position
-        simulator:setInputNumber(3, (simulator:getSlider(3) - 0.5) * 25)    -- z position
+        simulator:setInputNumber(1, 100+(simulator:getSlider(1) - 0) * 10)      -- x position
+        simulator:setInputNumber(2, 100+(simulator:getSlider(2) - 0) * 10)      -- y position
+        simulator:setInputNumber(3, 100+(simulator:getSlider(3) - 0.5) * 25)    -- z position
         simulator:setInputNumber(4, (simulator:getSlider(4)) * math.pi*2)   -- x rotation
         simulator:setInputNumber(5, (simulator:getSlider(5)) * math.pi*2)   -- y rotation
         simulator:setInputNumber(6, (simulator:getSlider(6)) * math.pi*2)   -- z rotation
@@ -143,42 +143,95 @@ function onTick()
                 cameraTranslation -- return
             )
 
-            --vec_scale(cameraTranslation, -1, translationMatrix[4]) -- set translation in translationMatrix
+            vec_scale(cameraTranslation, -1, translationMatrix[4]) -- set translation in translationMatrix
 
             -- cameraTransformMatrix = perspectiveProjectionMatrix * rotationMatrixZYX^T * translationMatrix
-            --matrix_mult(matrix_transpose(rotationMatrixZYX, tempMatrix1_4x4), translationMatrix, tempMatrix2_4x4)
-            --matrix_mult(perspectiveProjectionMatrix, tempMatrix2_4x4, cameraTransformMatrix)
-
-            matrix_mult(perspectiveProjectionMatrix, matrix_transpose(rotationMatrixZYX, tempMatrix1_4x4), cameraTransformMatrix)
+            matrix_mult(matrix_transpose(rotationMatrixZYX, tempMatrix1_4x4), translationMatrix, tempMatrix2_4x4)
+            matrix_mult(perspectiveProjectionMatrix, tempMatrix2_4x4, cameraTransformMatrix)
         end
 
-        for i = 1, 3 do
+        for i = 1, 4 do
             for j = 1, 4 do
                 output.setNumber((i-1)*4 + j, cameraTransformMatrix[i][j])
             end
         end
-        output.setNumber(13, cameraTransformMatrix[4][3])
-        output.setNumber(14, cameraTranslation[1])
-        output.setNumber(15, cameraTranslation[2])
-        output.setNumber(16, cameraTranslation[3])
     end
 
 end
 
 
 
---[=[ Debug
--- Quick debug to draw the basis vectors of the world coordinate system to verify cameraTransformMatrix
 
-local axisPoints = {{0,0,0,1}, {1,0,0,1}, {0,1,0,1}, {0,0,1,1}}
+
+--[[ Debug
+-- Quick debug to draw the basis vectors of the world coordinate system to verify cameraTransformMatrix and other tests
+local o = 100
+local axisPoints = {{o+0, o+0, o+0, 1}, {o+1, o+0, o+0, 1}, {o+0, o+1, o+0, 1}, {o+0, o+0, o+1, 1}}
 local axisColor = {{255,0,0,150}, {0,255,0,150}, {0,0,255,150}}
 local drawBuffer = {}
+local frustumPlanes = {{},{},{},{},{},{}}
+local cameraTransform = {}
+local buffer
+local b2n = {[true] = 1, [false] = 0}
+
+function extract_frustum_planes(cameraTransform)
+    --for i = 1, 4 do -- extract frustum planes https://github.com/EQMG/Acid/blob/master/Sources/Physics/Frustum.cpp
+    --    local temp1, temp2 = cameraTransform[i*4], (i-1)*4
+    --    frustumPlanes[1][i] = temp1 + cameraTransform[temp2 + 1]
+    --    frustumPlanes[2][i] = temp1 - cameraTransform[temp2 + 1]
+    --    frustumPlanes[3][i] = temp1 + cameraTransform[temp2 + 2]
+    --    frustumPlanes[4][i] = temp1 - cameraTransform[temp2 + 2]
+    --    frustumPlanes[5][i] = temp1 + cameraTransform[temp2 + 3]
+    --    frustumPlanes[6][i] = temp1 - cameraTransform[temp2 + 3]
+    --end
+
+    for i = 1, 4 do  -- extract frustum planes https://github.com/EQMG/Acid/blob/master/Sources/Physics/Frustum.cpp
+        for j = 1, 6 do
+            frustumPlanes[j][i] = cameraTransform[i*4] + cameraTransform[(i-1)*4 + (j+1)//2] * (j%2*2-1)
+        end
+    end
+
+--    for i = 1, 6 do -- normalize
+--        temp = frustumPlanes[i]
+--        local magnitude = (temp[1]^2 + temp[2]^2 + temp[3]^2)^0.5
+--        for j = 1, 4 do
+--            temp[j] = temp[j] / magnitude
+--        end
+--    end
+end
+function f(f,p) return b2n[frustumPlanes[f][1]*p[1] + frustumPlanes[f][2]*p[2] + frustumPlanes[f][3]*p[3] + frustumPlanes[f][4] > 0] end
+function vec_dot(a, b) local sum = 0 for i = 1, #a do sum = sum + a[i]*b[i] end return sum end
+function vec_cross(a, b, _return) _return[1], _return[2], _return[3] = a[2]*b[3] - a[3]*b[2], a[3]*b[1] - a[1]*b[3], a[1]*b[2] - a[2]*b[1] return _return end
+function three_plane_intersect(p1, p2, p3) -- https://gdbooks.gitbooks.io/3dcollisions/content/Chapter1/three_plane_intersection.html
+    local m1 = {p1[1], p2[1], p3[1]}
+    local m2 = {p1[2], p2[2], p3[2]}
+    local m3 = {p1[3], p2[3], p3[3]}
+    local d  = {p1[4], p2[4], p3[4]}
+
+    local u = vec_cross(m2, m3, {})
+    local v = vec_cross(m1, d,  {})
+    local denom = 1/vec_dot(m1, u)
+
+    if (math.abs(denom) < 1e-16) then err("don't intersect") end
+    return {
+        vec_dot(d, u) * denom,
+        vec_dot(m3, v) * denom,
+        -vec_dot(m2, v) * denom}
+end
 
 function draw(points)
     local width, height = screen.getWidth(), screen.getHeight()
     local cx, cy = width/2, height/2
 
-    local buffer = matrix_mult(cameraTransformMatrix, axisPoints)
+    buffer = matrix_mult(cameraTransformMatrix, axisPoints)
+    for i = 1, 4 do
+        for j = 1, 4 do
+            cameraTransform[(i-1)*4 + j] = cameraTransformMatrix[i][j]
+        end
+    end
+
+    extract_frustum_planes(cameraTransform)
+    local camera_position = three_plane_intersect(frustumPlanes[1], frustumPlanes[2], frustumPlanes[3])
 
     for i = 1, #points do
         local x,y,z,w = table.unpack(buffer[i])
@@ -203,6 +256,28 @@ function onDraw()
                 end
             end
         end
+
+        -- testing frustum culling point in clip space vs. world space with frustum planes
+        screen.setColor(255, 255, 255)
+        local X,Y,Z,W = table.unpack(buffer[1])
+        screen.drawText(0,1, string.format("%s%s%s%s%s%s", b2n[-W<=X], b2n[X<=W], b2n[-W<=Y], b2n[Y<=W], b2n[0<=Z], b2n[Z<=W]))
+        local p = axisPoints[1]
+        screen.drawText(0,7, string.format("%s%s%s%s%s%s", f(1,p), f(2,p), f(3,p), f(4,p), f(5,p), f(6,p)))
+
+        c2 = 0
+        for i = 1, 6 do
+            c1 = 0
+            for j = 1, 4 do
+                temp = frustumPlanes[i]
+                c1 = c1 + b2n[ temp[1]*axisPoints[j][1] + temp[2]*axisPoints[j][2] + temp[3]*axisPoints[j][3] + temp[4] > 0 ]
+            end
+            if c1 == 0 then
+                break
+            end
+            c2 = c2 + b2n[c1 == 4]
+        end
+
+        screen.drawText(0,14, string.format("%s %s", b2n[c2 == 6], b2n[c1>0]))
     end
 end
---]=]
+--]]

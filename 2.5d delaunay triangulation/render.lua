@@ -79,13 +79,13 @@ local v_x, v_y, v_z, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVisible, v_frame,
 --    batch_sequence, batch_sequence_prev, batch_add_ran, v1, v2, v3,
 --    adz, bdz, cdx, cdy, t, inv_t
 
-local vertex_buffer_list, triangle_buffer_list, camera_data, vertex3_buffer, frameCount, width, height, triangle_buffer_refreshrate, max_drawn_triangles, colors =
+local vertex_buffer_list, triangle_buffer_list, cameraTransform, vertex3_buffer, frameCount, width, height, triangle_buffer_refreshrate, max_drawn_triangles, colors =
     {0,0,0, 0,0,0, false, false, 0}, -- vertex_buffer_list
     {0,0,0, 0,0,0, 0, 0},            -- triangle_buffer_list
-    {}, -- camera_data
+    {}, -- cameraTransform
     {}, 0, -- vertex3_buffer, frameCount
     property.getNumber("w"), property.getNumber("h"), property.getNumber("TBR"), property.getNumber("MDT"), -- width, height, triangle_buffer_refreshrate, max_drawn_triangles
-    {{flat = {0,0,255}, steep = {0,150,255}}, {flat = {0,255,0}, steep = {255,200,0}}} -- colors = {color_water, color_ground}
+    {{flat = {0,0,255}, steep = {100,100,255}}, {flat = {0,255,0}, steep = {255,200,0}}} -- colors = {color_water, color_ground}
 
 px_cx, px_cy = width/2, height/2
 px_cx_pos, px_cy_pos = px_cx + property.getNumber("pxOffsetX"), px_cy + property.getNumber("pxOffsetY")
@@ -120,16 +120,12 @@ WorldToScreen_triangles = function(triangle_buffer)
             if v_frame[vertex_id] ~= frameCount then -- is the transformed vertex NOT already calculated
                 v_frame[vertex_id] = frameCount
 
-                X, Y, Z =
-                    v_x[vertex_id] - camera_data[14],
-                    v_y[vertex_id] - camera_data[15],
-                    v_z[vertex_id] - camera_data[16]
-
+                X, Y, Z = v_x[vertex_id], v_y[vertex_id], v_z[vertex_id]
                 X, Y, Z, W =
-                    camera_data[1]*X + camera_data[5]*Y + camera_data[9 ]*Z,
-                    camera_data[2]*X + camera_data[6]*Y + camera_data[10]*Z,
-                    camera_data[3]*X + camera_data[7]*Y + camera_data[11]*Z + camera_data[13],
-                    camera_data[4]*X + camera_data[8]*Y + camera_data[12]*Z
+                    cameraTransform[1]*X + cameraTransform[5]*Y + cameraTransform[9 ]*Z + cameraTransform[13],
+                    cameraTransform[2]*X + cameraTransform[6]*Y + cameraTransform[10]*Z + cameraTransform[14],
+                    cameraTransform[3]*X + cameraTransform[7]*Y + cameraTransform[11]*Z + cameraTransform[15],
+                    cameraTransform[4]*X + cameraTransform[8]*Y + cameraTransform[12]*Z + cameraTransform[16]
 
                 v_inNearAndFar[vertex_id] = 0<=Z and Z<=W
                 if v_inNearAndFar[vertex_id] then -- Is vertex between near and far plane
@@ -139,6 +135,8 @@ WorldToScreen_triangles = function(triangle_buffer)
                     v_sx[vertex_id] = X*W*px_cx + px_cx_pos
                     v_sy[vertex_id] = Y*W*px_cy + px_cy_pos
                     v_sz[vertex_id] = Z*W
+                else
+                    break
                 end
             end
         end
@@ -169,17 +167,17 @@ end
 ---require "JumperLib.DataStructures.JL_list"
 ---@return table
 QuadTree = function()
-    local qt, nCenterX, nCenterZ, nSize, nItems, nQuadrant1, nQuadrant2, nQuadrant3, nQuadrant4, check_queue, full_in_view_queue, check_queue_ptr, full_in_view_queue_ptr, check_queue_size, full_in_view_queue_size, lookUpTable, frustumPlaneTest, currentNode, quadrant, partially_visible, fully_visible, cx, cz, nodeSize, X, Y, Z, W =
+    local qt, nCenterX, nCenterZ, nSize, nItems, nQuadrant1, nQuadrant2, nQuadrant3, nQuadrant4, check_queue, full_in_view_queue, check_queue_ptr, full_in_view_queue_ptr, check_queue_size, full_in_view_queue_size, quadPoints, frustumPlanes, currentNode, quadrant, partially_visible, fully_visible, cx, cz, nodeSize, X, Y, Z, W, c1, c2 =
         {},{},{},{},{},{},{},{},{}, -- qt, nCenterX, nCenterZ, nSize, nItems, nQuadrant1, nQuadrant2, nQuadrant3, nQuadrant4
         {1}, {}, 0, 0, 0, 0, -- check_queue, full_in_view_queue, check_queue_ptr, full_in_view_queue_ptr, check_queue_size, full_in_view_queue_size
-        {}, {} -- lookUpTable, frustumPlaneTest
-        --, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil  -- currentNode, quadrant, partially_visible, fully_visible, cx, cz, nodeSize, X, Y, Z, W
+        {}, {{},{},{},{},{},{}} -- quadPoints, frustumPlanes
+        --, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil  -- currentNode, quadrant, partially_visible, fully_visible, cx, cz, nodeSize, X, Y, Z, W, c1, c2
 
-    local nodes, newNodeBuffer, quadrants, bool2num =
+    local nodes, newNodeBuffer, quadrants, bool2num, quadHeight =
         list({nCenterX, nCenterZ, nSize, nItems, nQuadrant1, nQuadrant2, nQuadrant3, nQuadrant4}),
         {0, 0, 3e5, false, false, false, false, false},
         {nQuadrant1, nQuadrant2, nQuadrant3, nQuadrant4},
-        {[false] = 0, [true] = 1}
+        {[false] = 0, [true] = 1}, {0,0,0,0,350,-255}
 
     nodes.list_insert(newNodeBuffer) -- init root node
 
@@ -238,11 +236,11 @@ QuadTree = function()
         full_in_view_queue_ptr = 1
         full_in_view_queue_size = 0
 
-        temp = -2 - math.max(camera_data[15], 0)
-        y1 = temp * camera_data[5]
-        y2 = temp * camera_data[6]
-        y3 = temp * camera_data[7]
-        y4 = temp * camera_data[8]
+        for i = 1, 4 do  -- extract frustum planes https://github.com/EQMG/Acid/blob/master/Sources/Physics/Frustum.cpp
+            for j = 1, 6 do
+                frustumPlanes[j][i] = cameraTransform[i*4] + cameraTransform[(i-1)*4 + (j+1)//2] * (j%2*2-1)
+            end
+        end
 
         repeat
             currentNode = check_queue[check_queue_ptr]
@@ -251,49 +249,37 @@ QuadTree = function()
                     triangle_buffer[#triangle_buffer+1] = nItems[currentNode][i]
                 end
             else
-                for i = 1, 6 do
-                    frustumPlaneTest[i] = 0
-                end
-
                 cx, cz, nodeSize = nCenterX[currentNode], nCenterZ[currentNode], nSize[currentNode]*2
-                lookUpTable[0] = nodeSize
-                lookUpTable[2] = -nodeSize
+                quadPoints[1] = cx + nodeSize
+                quadPoints[2] = cz + nodeSize
+                quadPoints[3] = cx - nodeSize
+                quadPoints[4] = cz + nodeSize
+                quadPoints[5] = cx + nodeSize
+                quadPoints[6] = cz - nodeSize
+                quadPoints[7] = cx - nodeSize
+                quadPoints[8] = cz - nodeSize
+                quadPoints[9] = cx
+                quadPoints[10] = cz
+                quadPoints[11] = cx
+                quadPoints[12] = cz
 
-                for i = 1, 4 do
-                    X, Z = -- quad corner
-                        cx + lookUpTable[i&2]  - camera_data[14],
-                        cz + lookUpTable[-i&2] - camera_data[16]
-
-                    X, Y, Z, W =
-                        camera_data[1]*X + camera_data[9 ]*Z + y1,
-                        camera_data[2]*X + camera_data[10]*Z + y2,
-                        camera_data[3]*X + camera_data[11]*Z + y3 + camera_data[13],
-                        camera_data[4]*X + camera_data[12]*Z + y4
-
-                    frustumPlaneTest[1] = frustumPlaneTest[1] + bool2num[-W<=X]
-                    frustumPlaneTest[2] = frustumPlaneTest[2] + bool2num[X<=W]
-                    frustumPlaneTest[3] = frustumPlaneTest[3] + bool2num[-W<=Y]
-                    frustumPlaneTest[4] = frustumPlaneTest[4] + bool2num[Y<=W]
-                    frustumPlaneTest[5] = frustumPlaneTest[5] + bool2num[0<=Z]
-                    frustumPlaneTest[6] = frustumPlaneTest[6] + bool2num[Z<=W]
-                end
-
-                partially_visible = true
-                fully_visible = true
+                c2 = 0
                 for i = 1, 6 do
-                    if frustumPlaneTest[i] == 0 then
-                        partially_visible = false
-                        fully_visible = false
-                        break
-                    elseif frustumPlaneTest[i] ~= 4 then
-                        fully_visible = false
+                    c1 = 0
+                    for j = 0, 5 do
+                        temp = frustumPlanes[i]
+                        c1 = c1 + bool2num[ temp[1]*quadPoints[j*2+1] + temp[2]*quadHeight[j+1] + temp[3]*quadPoints[j*2+2] + temp[4] > 0 ]
                     end
+                    if c1 == 0 then
+                        break
+                    end
+                    c2 = c2 + bool2num[c1 == 6]
                 end
 
-                if fully_visible then
+                if c2 > 4 then -- Fully accept. There are 6 points per quad node, but fully accept if more than 4 are visible
                     full_in_view_queue_size = full_in_view_queue_size + 1
                     full_in_view_queue[full_in_view_queue_size] = currentNode
-                elseif partially_visible then
+                elseif c1 > 0 then -- Partially accept
                     for i = 1, 4 do
                         quadrant = quadrants[i][currentNode]
                         if quadrant then
@@ -350,7 +336,7 @@ function onTick()
 
     if renderOn then
         for i = 1, 16 do
-            camera_data[i] = input.getNumber(i)
+            cameraTransform[i] = input.getNumber(i)
         end
 
         color_alpha = 0
