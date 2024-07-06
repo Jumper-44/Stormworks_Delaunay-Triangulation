@@ -39,14 +39,18 @@
     "Lua.runtime.pathStrict": true,
     "Lua.workspace.library": [
         "c:/Dev/Lua - Stormworks/Stormworks_DelaunayTriangulation/",
-        "c:/Users/emilk/.vscode/extensions/nameouschangey.lifeboatapi-0.0.32/assets/lua/Common/",
-        "c:/Users/emilk/.vscode/extensions/nameouschangey.lifeboatapi-0.0.32/assets/lua/Microcontroller/",
+        "c:/Users/emilk/.vscode/extensions/nameouschangey.lifeboatapi-0.0.33/assets/lua/Common/",
+        "c:/Users/emilk/.vscode/extensions/nameouschangey.lifeboatapi-0.0.33/assets/lua/Microcontroller/",
         "c:/Dev/Lua - Stormworks/Stormworks_DelaunayTriangulation/_build/libs/"
     ],
     "lifeboatapi.stormworks.libs.gitLibraries": [
         {
             "name": "LifeBoatAPI",
             "gitUrl": "https://github.com/nameouschangey/Stormworks_LifeBoatAPI_MC.git"
+        },
+        {
+            "name": "JumperLib",
+            "gitUrl": "https://github.com/Jumper-44/Stormworks_JumperLib.git"
         }
     ]
 }
