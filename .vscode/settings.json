@@ -38,10 +38,10 @@
     ],
     "Lua.runtime.pathStrict": true,
     "Lua.workspace.library": [
-        "c:/Dev/Lua - Stormworks/Stormworks_DelaunayTriangulation/",
+        "c:/Dev/Lua - Stormworks/Stormworks_Delaunay-Triangulation/",
         "c:/Users/emilk/.vscode/extensions/nameouschangey.lifeboatapi-0.0.33/assets/lua/Common/",
         "c:/Users/emilk/.vscode/extensions/nameouschangey.lifeboatapi-0.0.33/assets/lua/Microcontroller/",
-        "c:/Dev/Lua - Stormworks/Stormworks_DelaunayTriangulation/_build/libs/"
+        "c:/Dev/Lua - Stormworks/Stormworks_Delaunay-Triangulation/_build/libs/"
     ],
     "lifeboatapi.stormworks.libs.gitLibraries": [
         {
