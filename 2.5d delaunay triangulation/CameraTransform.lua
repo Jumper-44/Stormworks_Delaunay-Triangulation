@@ -54,13 +54,18 @@ end
 
 -- https://github.com/Jumper-44/Stormworks_JumperLib
 require('JumperLib.JL_general')
-require('JumperLib.Math.JL_matrix_transformations')
+require('JumperLib.Math.JL_matrix_transformations') -- also includes JumperLib.Math.JL_matrix_operations and JumperLib.Math.JL_vector_operations
 
 
-local lookX, lookY, headAzimuthAng, distance, headElevationAng
+
 local position, linearVelocity, angle, angularVelocity, head_position_offset, cameraTranslation, tempVec1_3d, tempVec2_3d = {}, {}, {}, {}, {}, {}, {}, {}
-local tempMatrix1_3x3, tempMatrix2_3x3, tempMatrix1_4x4, tempMatrix2_4x4, translationMatrix, rotationMatrixZYX, perspectiveProjectionMatrix, cameraTransformMatrix = matrix_init(3, 3), matrix_init(3, 3), matrix_init(4, 4), matrix_init(4, 4),  matrix_initIdentity(4, 4), matrix_initIdentity(4, 4), matrix_init(4, 4), matrix_init(4, 4)
-local isRendering, isFemale, OFFSET = false, false, {}
+local isRendering, OFFSET = false, {}
+local tempMatrix1_3x3, tempMatrix2_3x3, tempMatrix1_4x4, tempMatrix2_4x4, translationMatrix, rotationMatrixZYX, perspectiveProjectionMatrix, cameraTransformMatrix =
+    matrix_init(3, 3), matrix_init(3, 3),                 -- tempMatrix1_3x3, tempMatrix2_3x3
+    matrix_init(4, 4), matrix_init(4, 4),                 -- tempMatrix1_4x4, tempMatrix2_4x4
+    matrix_initIdentity(4, 4), matrix_initIdentity(4, 4), -- translationMatrix, rotationMatrixZYX
+    matrix_init(4, 4), matrix_init(4, 4)                  -- perspectiveProjectionMatrix, cameraTransformMatrix
+
 
 --#region Settings
 local SCREEN = {
@@ -84,6 +89,65 @@ OFFSET.tick = property.getNumber("tick")/60 -- tick compensation
 --#endregion Settings
 
 
+---Calculates an approximation of the player head position relative to the seat  
+---Origin is the center block of the (compact) seat headrest block  
+---result_vec3d will be a 3d vector in which forward is +yAxis, right is +xAxis, and up is +zAxis  
+---In game experimental values pulled with CheatEngine, which this function then approxmates to: https://www.geogebra.org/classic/uaphpn2k  
+---@param lookX number        from seat
+---@param lookY number        from seat
+---@param isFemale boolean    camera offset is different depending on character gender
+---@param result_vec3d vec3d  table
+function calcLocalHeadPosition(lookX, lookY, isFemale, result_vec3d)
+    local headAzimuthAng =    clamp(lookX, -0.277, 0.277) * 0.408 * tau -- 0.408 is to make 100° to 40.8°
+    local headElevationAng =  clamp(lookY, -0.125, 0.125) * 0.9 * tau + 0.404 + math.abs(headAzimuthAng/0.7101) * 0.122 -- 0.9 is to make 45° to 40.5°, 0.404 rad is 23.2°. 0.122 rad is 7° at max yaw.
+
+    local distance = math.cos(headAzimuthAng) * 0.1523
+    vec_init3d(result_vec3d,
+        math.sin(headAzimuthAng) * 0.1523,
+        math.sin(headElevationAng) * distance -(isFemale and 0.141 or 0.023),
+        math.cos(headElevationAng) * distance +(isFemale and 0.132 or 0.161)
+    )
+end
+
+---Calculates the camera transform matrix = perspectiveProjectionMatrix * rotationMatrixZYX^T * translationMatrix
+---@param result_matrix4x4 matrix4x4
+function calcCameraTransform(result_matrix4x4)
+    matrix_getPerspectiveProjection_facingZ(
+        SCREEN.near - head_position_offset[3], -- near
+        SCREEN.far                           , -- far
+        SCREEN.r    - head_position_offset[1], -- right
+        SCREEN.l    - head_position_offset[1], -- left
+        SCREEN.t    - head_position_offset[2], -- top
+        SCREEN.b    - head_position_offset[2], -- bottom
+        perspectiveProjectionMatrix -- return
+    )
+
+    vec_scale(angularVelocity, OFFSET.tick*tau, angularVelocity)
+    matrix_mult( -- rotation matrix with tick compensation
+        matrix_getRotZYX(angularVelocity[1],  angularVelocity[2], angularVelocity[3], tempMatrix1_3x3),
+        matrix_getRotZYX(angle[1],            angle[2],           angle[3],           tempMatrix2_3x3),
+        rotationMatrixZYX -- return
+    )
+
+    vec_add( -- cameraTranslation
+        vec_add(
+            matrix_multVec3d(rotationMatrixZYX, vec_add(OFFSET.GPS_to_camera, head_position_offset, tempVec1_3d), tempVec2_3d), -- XYZ offset to physics sensor
+            vec_scale(matrix_multVec3d(rotationMatrixZYX, linearVelocity, tempVec1_3d), OFFSET.tick, tempVec1_3d),              -- position tick compensation
+            cameraTranslation -- return
+        ),
+        position,         -- XYZ of physics sensor
+        cameraTranslation -- return
+    )
+
+    vec_scale(cameraTranslation, -1, translationMatrix[4]) -- set translation in translationMatrix
+
+    -- cameraTransformMatrix = perspectiveProjectionMatrix * rotationMatrixZYX^T * translationMatrix
+    matrix_mult(matrix_transpose(rotationMatrixZYX, tempMatrix1_4x4), translationMatrix, tempMatrix2_4x4)
+    matrix_mult(perspectiveProjectionMatrix, tempMatrix2_4x4, result_matrix4x4)
+end
+
+
+
 function onTick()
     isRendering = input.getBool(1)
 
@@ -97,57 +161,16 @@ function onTick()
 
     if isRendering then
         do -- calc cameraTransformMatrix
-            isFemale = input.getBool(2)
+            local isFemale = input.getBool(2)
             vec_init3d(position,        getNumber3(1, 2, 3))    -- physics sensor
             vec_init3d(angle,           getNumber3(4, 5, 6))    -- physics sensor
             vec_init3d(linearVelocity,  getNumber3(7, 8, 9))    -- physics sensor
             vec_init3d(angularVelocity, getNumber3(10, 11, 12)) -- physics sensor
 
-            -- head_position_offset (approximation)
-            lookX, lookY = input.getNumber(13), input.getNumber(14) -- lookX|Y from seat
-            headAzimuthAng =    clamp(lookX, -0.277, 0.277) * 0.408 * tau -- 0.408 is to make 100° to 40.8°
-            headElevationAng =  clamp(lookY, -0.125, 0.125) * 0.9 * tau + 0.404 + math.abs(headAzimuthAng/0.7101) * 0.122 -- 0.9 is to make 45° to 40.5°, 0.404 rad is 23.2°. 0.122 rad is 7° at max yaw.
-
-            distance = math.cos(headAzimuthAng) * 0.1523
-            head_position_offset = vec_init3d(head_position_offset,
-                math.sin(headAzimuthAng) * 0.1523,
-                math.sin(headElevationAng) * distance -(isFemale and 0.141 or 0.023),
-                math.cos(headElevationAng) * distance +(isFemale and 0.132 or 0.161)
-            )
-            -- /head_position_offset/
-
-            matrix_getPerspectiveProjection_facingZ(
-                SCREEN.near - head_position_offset[3], -- near
-                SCREEN.far                           , -- far
-                SCREEN.r    - head_position_offset[1], -- right
-                SCREEN.l    - head_position_offset[1], -- left
-                SCREEN.t    - head_position_offset[2], -- top
-                SCREEN.b    - head_position_offset[2], -- bottom
-                perspectiveProjectionMatrix -- return
-            )
-
-            vec_scale(angularVelocity, OFFSET.tick*tau, angularVelocity)
-            matrix_mult( -- rotation matrix with tick compensation
-                matrix_getRotZYX(angularVelocity[1],  angularVelocity[2], angularVelocity[3], tempMatrix1_3x3),
-                matrix_getRotZYX(angle[1],            angle[2],           angle[3],           tempMatrix2_3x3),
-                rotationMatrixZYX -- return
-            )
-
-            vec_add( -- cameraTranslation
-                vec_add(
-                    matrix_multVec3d(rotationMatrixZYX, vec_add(OFFSET.GPS_to_camera, head_position_offset, tempVec1_3d), tempVec2_3d), -- XYZ offset to physics sensor
-                    vec_scale(matrix_multVec3d(rotationMatrixZYX, linearVelocity, tempVec1_3d), OFFSET.tick, tempVec1_3d),              -- position tick compensation
-                    cameraTranslation -- return
-                ),
-                position,         -- XYZ of physics sensor
-                cameraTranslation -- return
-            )
-
-            vec_scale(cameraTranslation, -1, translationMatrix[4]) -- set translation in translationMatrix
-
-            -- cameraTransformMatrix = perspectiveProjectionMatrix * rotationMatrixZYX^T * translationMatrix
-            matrix_mult(matrix_transpose(rotationMatrixZYX, tempMatrix1_4x4), translationMatrix, tempMatrix2_4x4)
-            matrix_mult(perspectiveProjectionMatrix, tempMatrix2_4x4, cameraTransformMatrix)
+            local lookX = input.getNumber(13) -- lookX from seat
+            local lookY = input.getNumber(14) -- lookY from seat
+            calcLocalHeadPosition(lookX, lookY, isFemale, head_position_offset)
+            calcCameraTransform(cameraTransformMatrix)
         end
 
         for i = 1, 4 do
