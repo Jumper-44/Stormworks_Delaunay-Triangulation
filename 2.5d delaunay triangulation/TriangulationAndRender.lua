@@ -43,12 +43,12 @@ local v_x, v_y, v_z, v_near_dtriangle, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVis
     dtriangle_check_queue, invalid_dtriangles, edge_boundary_neighbor, edge_boundary_v1, edge_boundary_v2, edge_shared,
     vertices, vertices_kdtree, vertices_buffer, triangles, triangles_buffer, dtriangles, dtriangles_neighbors, dtriangles_buffer,
     cameraTransform, triangle_draw_buffer, -- all the variables here and above in this local statement are set as tables in initialize()
-    pointSub, add_vertex, add_dtriangle, new_tables, initialize, -- functions
-    px_cx, px_cy, px_cx_pos, px_cy_pos
+    pointSub, add_vertex, add_dtriangle, initialize, -- functions
+    px_cx, px_cy, px_cx_pos, px_cy_pos, insertionTick, frameTick
 
 
-local tick, pointBuffer, point_min_density_squared, max_triangle_size_squared, width, height, triangle_buffer_refreshrate, max_drawn_triangles, colors =
-    0, {0,0,0}, property.getNumber("Min_D"), property.getNumber("Max_T"),
+local pointBuffer, point_min_density_squared, max_triangle_size_squared, width, height, triangle_buffer_refreshrate, max_drawn_triangles, colors =
+    {0,0,0}, property.getNumber("Min_D"), property.getNumber("Max_T"),
     property.getNumber("w"), property.getNumber("h"), property.getNumber("TBR"), property.getNumber("MDT"),
     {{flat = {0,0,255}, steep = {100,100,255}}, {flat = {0,255,0}, steep = {255,200,0}}} -- colors = {color_water, color_ground}
 
@@ -131,9 +131,10 @@ function initialize()
     dtriangles_neighbors = {dt_neighbor1, dt_neighbor2, dt_neighbor3}
     dtriangles_buffer = {0,0,0, false,false,false, false,false,false}
 
+    insertionTick = 0
+    frameTick = 0
 
-
-    -- init super-triangle
+    -- init super-triangle, roughly covers the playable area with islands
     add_vertex(-9E5, 0, -9E5)
     add_vertex(9E5,  0, -9E5)
     add_vertex(0,    0,  9E5)
@@ -201,7 +202,7 @@ function dt_insert_point(nearVertexID, point)
     local pointID, new_triangle, current_boundary_neighbor, hash_index, shared_triangle, current_triangle, current_neighbor, triangle_check_queue_pointer, triangle_check_queue_size, invalid_triangles_size, edge_boundary_size
 
     dtriangle_check_queue[1] = v_near_dtriangle[nearVertexID] -- Jump to a near dtriangle to 'point'. Keypoint for going from O(n*n) to O(n*log n) on average, as neighboring triangle search can be done
-    dt_isChecked[dtriangle_check_queue[1]] = true
+    dt_isChecked[dtriangle_check_queue[1]] = insertionTick
     triangle_check_queue_pointer = 1
     triangle_check_queue_size = 1
     invalid_triangles_size = 0
@@ -210,7 +211,7 @@ function dt_insert_point(nearVertexID, point)
     repeat -- Find all invalid triangles, by walking around neighboring triangles till all invalid triangle(s) (which all touch each other) has been found
         current_triangle = dtriangle_check_queue[triangle_check_queue_pointer]
 
-        if incirclefast(dt_v1[current_triangle], dt_v2[current_triangle], dt_v3[current_triangle], pointID) < 1e-9 then -- Is current_triangle invalid? || Is point inside circumcircle of current_triangle?
+        if incirclefast(dt_v1[current_triangle], dt_v2[current_triangle], dt_v3[current_triangle], pointID) <= 0 then -- Is current_triangle invalid? || Is point inside circumcircle of current_triangle?
             dt_isInvalid[current_triangle] = true
             invalid_triangles_size = invalid_triangles_size + 1
             invalid_dtriangles[invalid_triangles_size] = current_triangle
@@ -219,20 +220,16 @@ function dt_insert_point(nearVertexID, point)
         if dt_isInvalid[current_triangle] or invalid_triangles_size == 0 then -- If current_triangle is invalid OR no invalid triangles has been found yet then try add neighboring triangles of current_triangle to check queue
             for i = 1, 3 do
                 current_neighbor = dtriangles_neighbors[i][current_triangle]
-                if current_neighbor and not dt_isChecked[current_neighbor] then -- if neighbor exist and has not been checked yet then add to check queue
+                if current_neighbor and (dt_isChecked[current_neighbor] ~= insertionTick) then -- if neighbor exist and has not been checked yet then add to check queue
                     triangle_check_queue_size = triangle_check_queue_size + 1
                     dtriangle_check_queue[triangle_check_queue_size] = current_neighbor
-                    dt_isChecked[current_neighbor] = true
+                    dt_isChecked[current_neighbor] = insertionTick
                 end
             end
         end
 
         triangle_check_queue_pointer = triangle_check_queue_pointer + 1
     until triangle_check_queue_size < triangle_check_queue_pointer
-
-    for i = 1, triangle_check_queue_size do -- reset isChecked state for checked triangles
-        dt_isChecked[dtriangle_check_queue[i]] = false
-    end
 
     edge_boundary_size = 0
     for i = 1, invalid_triangles_size do 
@@ -314,6 +311,7 @@ function dt_insert_point(nearVertexID, point)
     end
 
     v_near_dtriangle[pointID] = new_triangle -- Set near triangle reference to new inserted point
+    insertionTick = insertionTick + 1
 end
 
 
@@ -327,7 +325,7 @@ end
 WorldToScreen_triangles = function(triangle_buffer)
     local new_triangle_buffer, refreshCurrentFrame, currentTriangle, vertex_id, X, Y, Z, x, y, z, w, v1, v2, v3
     new_triangle_buffer = {}
-    refreshCurrentFrame = tick % triangle_buffer_refreshrate == 0
+    refreshCurrentFrame = frameTick % triangle_buffer_refreshrate == 0
 
     --if refreshCurrentFrame then
     --    triangle_buffer = {}
@@ -343,8 +341,8 @@ WorldToScreen_triangles = function(triangle_buffer)
         for j = 1, 3 do
             vertex_id = triangles[j][currentTriangle]
 
-            if v_frame[vertex_id] ~= tick then -- is the transformed vertex NOT already calculated
-                v_frame[vertex_id] = tick
+            if v_frame[vertex_id] ~= frameTick then -- is the transformed vertex NOT already calculated
+                v_frame[vertex_id] = frameTick
 
                 X = v_x[vertex_id]
                 Y = v_y[vertex_id]
@@ -426,8 +424,6 @@ function onTick()
             end
         end
     end
-
-    tick = tick + 1
 end
 
 
@@ -457,4 +453,6 @@ function onDraw()
 
     screen.setColor(0, 255, 0)
     screen.drawText(5,5, ("DT/T: %i/%i"):format(#dt_v1, #t_v1))
+
+    frameTick = frameTick + 1
 end
