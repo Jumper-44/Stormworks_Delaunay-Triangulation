@@ -36,6 +36,26 @@ end
 require("JumperLib.DataStructures.JL_list")   -- list{}, main point of this is to initialize and organize multiple tables in array and not hashmap part
 require("JumperLib.DataStructures.JL_kdtree") -- using IKDTree()
 
+---@param str string
+---@param t table
+---@overload fun(str: string):table
+function strToNumbers(str, t)
+    t = t and t or {}
+    for w in property.getText(str):gmatch"[+%w.-]+" do
+        t[#t+1] = tonumber(w)
+    end
+    return t
+end
+
+---@param str string
+---@param t table
+function multiReadPropertyNumbers(str, t)
+    for w in property.getText(str):gmatch"[^!]+" do
+        strToNumbers(w, t)
+    end
+    return t
+end
+
 -- globally scoped locals
 local v_x, v_y, v_z, v_near_dtriangle, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVisible, v_frame,                          --v shorthand for vertex
     t_v1, t_v2, t_v3, t_colorR, t_colorG, t_colorB, t_centroidDepth,                                                    --t shorthand for triangle
@@ -44,17 +64,28 @@ local v_x, v_y, v_z, v_near_dtriangle, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVis
     vertices, vertices_kdtree, vertices_buffer, triangles, triangles_buffer, dtriangles, dtriangles_neighbors, dtriangles_buffer,
     cameraTransform, triangle_draw_buffer, -- all the variables here and above in this local statement are set as tables in initialize()
     pointSub, add_vertex, add_dtriangle, initialize, -- functions
-    px_cx, px_cy, px_cx_pos, px_cy_pos, insertionTick, frameTick
+    width, height, px_cx, px_cy, px_cx_pos, px_cy_pos, insertionTick, frameTick
 
+local SCREEN, HMD, pointBuffer, point_min_density_squared, max_triangle_size_squared, triangle_buffer_refreshrate, max_drawn_triangles, colors =
+    multiReadPropertyNumbers("SCREEN", {}),
+    {256, 192, 128, 96, 128, 96}, -- {width, height, width/2, height/2, width/2, height/2}
+    {0,0,0},
+    property.getNumber("Min_D"), property.getNumber("Max_T"),
+    property.getNumber("TBR"),   property.getNumber("MDT"),
+    {{flat = strToNumbers "WF", steep = strToNumbers "WS"}, {flat = strToNumbers "GF", steep = strToNumbers "GS"}} -- colors = {color_water, color_ground}
 
-local pointBuffer, point_min_density_squared, max_triangle_size_squared, width, height, triangle_buffer_refreshrate, max_drawn_triangles, colors =
-    {0,0,0}, property.getNumber("Min_D"), property.getNumber("Max_T"),
-    property.getNumber("w"), property.getNumber("h"), property.getNumber("TBR"), property.getNumber("MDT"),
-    {{flat = {0,0,255}, steep = {100,100,255}}, {flat = {0,255,0}, steep = {255,200,0}}} -- colors = {color_water, color_ground}
-
-px_cx, px_cy = width/2, height/2
-px_cx_pos, px_cy_pos = px_cx + property.getNumber("pxOffsetX"), px_cy + property.getNumber("pxOffsetY")
-
+--local SCREEN = {
+--  [1]  w              -- Pixel width of screen
+--  [2]  h              -- Pixel height of screen
+--  [3]  near           -- Distance to near plane in meters, but added offset. So "near" is the distance from the end of (compact) seat model to the screen. I.e how many blocks between (compact) seat and screen divided by 4.
+--  [4]  far            -- Distance to far plane in meters, max render distance
+--  [5]  sizeX          -- Physical sizeX/width of screen in meters. (Important that it is the actual screen part with pixels and not model width)
+--  [6]  sizeY          -- Physical sizeY/height of screen in meters. (Important that it is the actual screen part with pixels and not model height)
+--  [7]  posOffsetX     -- Physical offset in the XY plane along X:right in meters.
+--  [8]  posOffsetY     -- Physical offset in the XY plane along Y:up in meters. (HUD screen is 0.01 m offset in the model)
+--  [9]  pxOffsetX      -- Pixel offset on screen, not applied to HMD
+--  [10] pxOffsety      -- Pixel offset on screen, not applied to HMD
+--}
 
 
 ---Helper function to reduce chars for arithemetic vector operation
@@ -400,6 +431,17 @@ function onTick()
 
     drawWireframe = input.getBool(4)
 
+    if input.getBool(5) then -- is head mounted display (HMD)?
+        width, height, px_cx, px_cy, px_cx_pos, px_cy_pos = table.unpack(HMD)
+    else
+        width  = SCREEN[1]
+        height = SCREEN[2]
+        px_cx  = width/2
+        px_cy  = height/2
+        px_cx_pos = px_cx + SCREEN[9]
+        px_cy_pos = px_cy + SCREEN[10]
+    end
+
     if renderOn then
         for i = 1, 16 do
             cameraTransform[i] = input.getNumber(i)
@@ -411,7 +453,7 @@ function onTick()
         end
     end
 
-    for i = 17, 29, 3 do
+    for i = 17, 29, 3 do -- read composite range [17;31], i.e. laser endpoint positions
         pointBuffer[1] = input.getNumber(i)
         pointBuffer[2] = input.getNumber(i+1)
         pointBuffer[3] = input.getNumber(i+2)
@@ -452,7 +494,7 @@ function onDraw()
     end
 
     screen.setColor(0, 255, 0)
-    screen.drawText(5,5, ("DT/T: %i/%i"):format(#dt_v1, #t_v1))
+    screen.drawText(5,5, ("DT/T/View: %i/%i/%i"):format(#dt_v1, #t_v1, #triangle_draw_buffer))
 
     frameTick = frameTick + 1
 end

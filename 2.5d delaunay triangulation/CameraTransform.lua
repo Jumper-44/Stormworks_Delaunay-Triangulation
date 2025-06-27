@@ -18,23 +18,22 @@ do
     ---@type Simulator -- Set properties and screen sizes here - will run once when the script is loaded
     simulator = simulator
     simulator:setScreen(1, "3x3")
-    simulator:setProperty("w", 160)                 -- Pixel width of screen
-    simulator:setProperty("h", 160)                 -- Pixel height of screen
-    simulator:setProperty("near", 0.25)             -- Distance to near plane in meters, but added offset later on. So "near" is the distance from the end of (compact) seat model to the screen. I.e how many blocks between (compact) seat and screen divided by 4.
-    simulator:setProperty("far", 25)              -- Distance to far plane in meters, max render distance
-    simulator:setProperty("sizeX", 0.71)            -- Physical sizeX/width of screen in meters. (Important that it is the actual screen part with pixels and not model width)
-    simulator:setProperty("sizeY", 0.71)            -- Physical sizeY/height of screen in meters. (Important that it is the actual screen part with pixels and not model height)
-    simulator:setProperty("positionOffsetX", 0)     -- Physical offset in the XY plane along X:right in meters.
-    simulator:setProperty("positionOffsetY", 0.01)  -- Physical offset in the XY plane along Y:up in meters. (HUD screen is 0.01 m offset in the model)
+    simulator:setProperty("Screen Config", "w, h!near, far!sizeX|Y!posOffsetX|Y!pxOffsetX|Y")
+    simulator:setProperty("w, h", "160, 160")
+    simulator:setProperty("near, far", "0, 25")
+    simulator:setProperty("sizeX|Y", "0.71, 0.71")
+    simulator:setProperty("posOffsetX|Y", "0, 0.01")
+    simulator:setProperty("pxOffsetX|Y", "0, 0")
 
-    simulator:setProperty("tick", 0)                  -- tick compensation
-    simulator:setProperty("GPS_to_camera", "0, 0, 0") -- Offset from physics sensor block to seat headrest block. (X:right, Y:up, Z:forward)
+    simulator:setProperty("GPS_to_camera", "0, 0, 0")
+    simulator:setProperty("PhysicsTick", 0)
+    simulator:setProperty("SeatTick", 0)
 
     -- Runs every tick just before onTick; allows you to simulate the inputs changing
     ---@param simulator Simulator Use simulator:<function>() to set inputs etc.
     ---@param ticks     number Number of ticks since simulator started
     function onLBSimulatorTick(simulator, ticks)
-        simulator:setInputBool(1, true) -- isRendering = true
+        simulator:setInputBool(1, true) -- renderOn = true
 
                                                                             -- Debug sliders
         simulator:setInputNumber(1, 100+(simulator:getSlider(1) - 0) * 10)      -- x position
@@ -57,49 +56,147 @@ require('JumperLib.JL_general')
 require('JumperLib.Math.JL_matrix_transformations') -- also includes JumperLib.Math.JL_matrix_operations and JumperLib.Math.JL_vector_operations
 
 
+---@param str string
+---@param t table
+---@overload fun(str: string):table
+function strToNumbers(str, t)
+    t = t and t or {}
+    for w in property.getText(str):gmatch"[+%w.-]+" do
+        t[#t+1] = tonumber(w)
+    end
+    return t
+end
+
+---@param str string
+---@param t table
+function multiReadPropertyNumbers(str, t)
+    for w in property.getText(str):gmatch"[^!]+" do
+        strToNumbers(w, t)
+    end
+    return t
+end
 
 local position, linearVelocity, angle, angularVelocity, head_position_offset, cameraTranslation, tempVec1_3d, tempVec2_3d = {}, {}, {}, {}, {}, {}, {}, {}
-local isRendering, OFFSET = false, {}
-local tempMatrix1_3x3, tempMatrix2_3x3, tempMatrix1_4x4, tempMatrix2_4x4, translationMatrix, rotationMatrixZYX, perspectiveProjectionMatrix, cameraTransformMatrix =
-    matrix_init(3, 3), matrix_init(3, 3),                 -- tempMatrix1_3x3, tempMatrix2_3x3
-    matrix_init(4, 4), matrix_init(4, 4),                 -- tempMatrix1_4x4, tempMatrix2_4x4
+local renderOn, OFFSET = false, {}
+local tempMatrix1_3x3, tempMatrix2_3x3, tempMatrix3_3x3, tempMatrix4_3x3, tempMatrix1_4x4, tempMatrix2_4x4, translationMatrix, rotationMatrixZYX, perspectiveProjectionMatrix, cameraTransformMatrix =
+    matrix_initIdentity(3, 3), matrix_initIdentity(3, 3), matrix_initIdentity(3, 3), matrix_initIdentity(3, 3),
+    matrix_initIdentity(4, 4), matrix_initIdentity(4, 4),
     matrix_initIdentity(4, 4), matrix_initIdentity(4, 4), -- translationMatrix, rotationMatrixZYX
     matrix_init(4, 4), matrix_init(4, 4)                  -- perspectiveProjectionMatrix, cameraTransformMatrix
 
 
 --#region Settings
-local SCREEN = {
-    w = property.getNumber("w"),                                -- Pixel width of screen
-    h = property.getNumber("h"),                                -- Pixel height of screen
-    near = property.getNumber("near") + 0.635,                  -- Distance to near plane in meters, but added offset. So "near" is the distance from the end of (compact) seat model to the screen. I.e how many blocks between (compact) seat and screen divided by 4.
-    far = property.getNumber("far"),                            -- Distance to far plane in meters, max render distance
-    sizeX = property.getNumber("sizeX"),                        -- Physical sizeX/width of screen in meters. (Important that it is the actual screen part with pixels and not model width)
-    sizeY = property.getNumber("sizeY"),                        -- Physical sizeY/height of screen in meters. (Important that it is the actual screen part with pixels and not model height)
-    positionOffsetX = property.getNumber("positionOffsetX"),    -- Physical offset in the XY plane along X:right in meters.
-    positionOffsetY = property.getNumber("positionOffsetY")     -- Physical offset in the XY plane along Y:up in meters. (HUD screen is 0.01 m offset in the model)
+--local SCREEN = {
+--  [1]  w              -- Pixel width of screen
+--  [2]  h              -- Pixel height of screen
+--  [3]  near           -- Distance to near plane in meters, but added offset. So "near" is the distance from the end of (compact) seat model to the screen. I.e how many blocks between (compact) seat and screen divided by 4.
+--  [4]  far            -- Distance to far plane in meters, max render distance
+--  [5]  sizeX          -- Physical sizeX/width of screen in meters. (Important that it is the actual screen part with pixels and not model width)
+--  [6]  sizeY          -- Physical sizeY/height of screen in meters. (Important that it is the actual screen part with pixels and not model height)
+--  [7]  posOffsetX     -- Physical offset in the XY plane along X:right in meters.
+--  [8]  posOffsetY     -- Physical offset in the XY plane along Y:up in meters. (HUD screen is 0.01 m offset in the model)
+--  [9]  pxOffsetX      -- Pixel offset on screen, not applied to HMD
+--  [10] pxOffsety      -- Pixel offset on screen, not applied to HMD
+--}
+local SCREEN = multiReadPropertyNumbers("SCREEN", {})
+SCREEN.n = SCREEN[3] + 0.635
+SCREEN.f = SCREEN[4]
+SCREEN.r = SCREEN[5]/2  + SCREEN[7]
+SCREEN.l = -SCREEN[5]/2 + SCREEN[7]
+SCREEN.t = SCREEN[6]/2  + SCREEN[8]
+SCREEN.b = -SCREEN[6]/2 + SCREEN[8]
+
+
+local HMD = { -- HEAD_MOUNTED_DISPLAY
+    w     = 256,
+    h     = 192,
+    vFov  = 1.014197,
+    n     = 0.1, -- arbitrary picked value
+    f     = SCREEN[4]}
+HMD.t     = HMD.n * math.tan(HMD.vFov/2)
+HMD.r     = HMD.t * 4/3   -- HMD.t * HMD.w / HMD.h
+HMD.l     = -HMD.r
+HMD.b     = -HMD.t
+
+local look = {
+    lookX = {}, lookY = {},
+    dlx = 0, dly = 0, -- delta look x|y
+    sdlx = 0, sdly = 0, -- smooth delta look x|y,   trying some smoothing as camera gets really jittery by mouse movement
+--  amount = 4, -- (2 <= amount)
+--  sf = 0.9, -- smooth factor
+--  isf = 1-smooth_factor
+--  invSumWeight
 }
+do
+    look.amount, look.sf = table.unpack(strToNumbers "MouseLook: History, Smoothing")
+    local n = look.amount-1
+    look.invSumWeight = 1 / (n*(n+1)*(2*n+1)/6)
+    look.isf = 1-look.sf
+end
 
-SCREEN.r = SCREEN.sizeX/2  + SCREEN.positionOffsetX
-SCREEN.l = -SCREEN.sizeX/2 + SCREEN.positionOffsetX
-SCREEN.t = SCREEN.sizeY/2  + SCREEN.positionOffsetY
-SCREEN.b = -SCREEN.sizeY/2 + SCREEN.positionOffsetY
+for i = 1, look.amount do
+    look.lookX[i] = 0
+    look.lookY[i] = 0
+end
 
-OFFSET.GPS_to_camera = str_to_vec(property.getText("GPS_to_camera")) -- Offset from physics sensor block to seat headrest block. (X:right, Y:up, Z:forward)
-OFFSET.tick = property.getNumber("tick")/60 -- tick compensation
+--local lookXMax, lookXMin = 0.35, -0.35
+--local lookYMax, lookYMin = 0.2, -0.2
+
+OFFSET.GPS_to_camera = strToNumbers "GPS_to_camera" -- Offset from physics sensor block to seat headrest block. (X:right, Y:up, Z:forward)
+OFFSET.PhysicsTick = property.getNumber("PhysicsTick")/60 -- physics sensor tick compensation
+OFFSET.SeatTick = property.getNumber("SeatTick")          -- seat lookX|Y tick compensation
 --#endregion Settings
+
+
+---Cheap lerp of lookXY with short history to smooth.  
+---Since LookXY are euler angles then I think this is wrong,  
+---and need something like quaternion slerp, but I don't know.  
+---Mouse movement feels really jittery, so trying some smoothing.
+---@param this_lx number
+---@param this_ly number
+function lookXY_estimation(this_lx, this_ly)
+    local lookX, lookY = look.lookX, look.lookY
+    table.insert(lookX, 1, this_lx)
+    table.insert(lookY, 1, this_ly)
+    table.remove(lookX)
+    table.remove(lookY)
+
+    local n, avgVelX, avgVelY, bias
+    n = look.amount
+    avgVelX, avgVelY = 0, 0
+    for i = 2, n do
+        bias = 1+n-i
+        bias = bias*bias -- bias should over all iterations of i, sum up to 100%
+        avgVelX = avgVelX + (lookX[i-1]-lookX[i]) * bias
+        avgVelY = avgVelY + (lookY[i-1]-lookY[i]) * bias
+    end
+
+    if math.abs(lookX[1]-lookX[2]) < 1e-5 and math.abs(lookY[1]-lookY[2]) < 1e-5 then
+        look.dlx = 0
+        look.dly = 0
+        look.sdlx = 0
+        look.sdly = 0
+    else
+        look.dlx = avgVelX * look.invSumWeight
+        look.dly = avgVelY * look.invSumWeight
+        look.sdlx = look.sdlx * look.isf + look.dlx * look.sf
+        look.sdly = look.sdly * look.isf + look.dly * look.sf
+    end
+end
+
 
 
 ---Calculates an approximation of the player head position relative to the seat  
 ---Origin is the center block of the (compact) seat headrest block  
----result_vec3d will be a 3d vector in which forward is +yAxis, right is +xAxis, and up is +zAxis  
+---result_vec3d will be a 3d vector in which forward is +zAxis, right is +xAxis, and up is +yAxis  
 ---In game experimental values pulled with CheatEngine, which this function then approxmates to: https://www.geogebra.org/classic/uaphpn2k  
 ---@param lookX number        from seat
 ---@param lookY number        from seat
 ---@param isFemale boolean    camera offset is different depending on character gender
 ---@param result_vec3d vec3d  table
 function calcLocalHeadPosition(lookX, lookY, isFemale, result_vec3d)
-    local headAzimuthAng =    clamp(lookX, -0.277, 0.277) * 0.408 * tau -- 0.408 is to make 100° to 40.8°
-    local headElevationAng =  clamp(lookY, -0.125, 0.125) * 0.9 * tau + 0.404 + math.abs(headAzimuthAng/0.7101) * 0.122 -- 0.9 is to make 45° to 40.5°, 0.404 rad is 23.2°. 0.122 rad is 7° at max yaw.
+    local headAzimuthAng   = clamp(lookX, -0.277, 0.277) * 0.408 * tau -- 0.408 is to make 100° to 40.8°
+    local headElevationAng = clamp(lookY, -0.125, 0.125) * 0.9 * tau + 0.404 + math.abs(headAzimuthAng/0.7101) * 0.122 -- 0.9 is to make 45° to 40.5°, 0.404 rad is 23.2°. 0.122 rad is 7° at max yaw.
 
     local distance = math.cos(headAzimuthAng) * 0.1523
     vec_init3d(result_vec3d,
@@ -111,18 +208,30 @@ end
 
 ---Calculates the camera transform matrix = perspectiveProjectionMatrix * rotationMatrixZYX^T * translationMatrix
 ---@param result_matrix4x4 matrix4x4
-function calcCameraTransform(result_matrix4x4)
-    matrix_getPerspectiveProjection_facingZ(
-        SCREEN.near - head_position_offset[3], -- near
-        SCREEN.far                           , -- far
-        SCREEN.r    - head_position_offset[1], -- right
-        SCREEN.l    - head_position_offset[1], -- left
-        SCREEN.t    - head_position_offset[2], -- top
-        SCREEN.b    - head_position_offset[2], -- bottom
-        perspectiveProjectionMatrix -- return
-    )
+function calcCameraTransform(isHMD, result_matrix4x4)
+    if isHMD then
+        matrix_getPerspectiveProjection_facingZ(
+            HMD.n, -- near
+            HMD.f, -- far
+            HMD.r, -- right
+            HMD.l, -- left
+            HMD.t, -- top
+            HMD.b, -- bottom
+            perspectiveProjectionMatrix -- return
+        )
+    else
+        matrix_getPerspectiveProjection_facingZ(
+            SCREEN.n - head_position_offset[3], -- near
+            SCREEN.f                          , -- far
+            SCREEN.r - head_position_offset[1], -- right
+            SCREEN.l - head_position_offset[1], -- left
+            SCREEN.t - head_position_offset[2], -- top
+            SCREEN.b - head_position_offset[2], -- bottom
+            perspectiveProjectionMatrix -- return
+        )
+    end
 
-    vec_scale(angularVelocity, OFFSET.tick*tau, angularVelocity)
+    vec_scale(angularVelocity, OFFSET.PhysicsTick*tau, angularVelocity)
     matrix_mult( -- rotation matrix with tick compensation
         matrix_getRotZYX(angularVelocity[1],  angularVelocity[2], angularVelocity[3], tempMatrix1_3x3),
         matrix_getRotZYX(angle[1],            angle[2],           angle[3],           tempMatrix2_3x3),
@@ -132,24 +241,57 @@ function calcCameraTransform(result_matrix4x4)
     vec_add( -- cameraTranslation
         vec_add(
             matrix_multVec3d(rotationMatrixZYX, vec_add(OFFSET.GPS_to_camera, head_position_offset, tempVec1_3d), tempVec2_3d), -- XYZ offset to physics sensor
-            vec_scale(matrix_multVec3d(rotationMatrixZYX, linearVelocity, tempVec1_3d), OFFSET.tick, tempVec1_3d),              -- position tick compensation
+            vec_scale(matrix_multVec3d(rotationMatrixZYX, linearVelocity, tempVec1_3d), OFFSET.PhysicsTick, tempVec1_3d),       -- position tick compensation
             cameraTranslation -- return
         ),
         position,         -- XYZ of physics sensor
         cameraTranslation -- return
     )
 
+    if isHMD then -- apply player head rotation if HMD
+        local lx, ly, dlx, dly =
+            look.lookX[1], look.lookY[1],
+            look.sdlx, look.sdly
+
+        matrix_mult(
+            matrix_getRotY( lx * tau, tempMatrix1_3x3),
+            matrix_getRotX(-ly * tau, tempMatrix2_3x3),
+            tempMatrix3_3x3
+        )
+
+        matrix_mult(
+            matrix_getRotY( dlx * tau * OFFSET.SeatTick, tempMatrix1_3x3),
+            matrix_getRotX(-dly * tau * OFFSET.SeatTick, tempMatrix2_3x3),
+            tempMatrix4_3x3
+        )
+
+        matrix_mult(
+            tempMatrix4_3x3,
+            tempMatrix3_3x3,
+            tempMatrix1_4x4
+        )
+
+        matrix_mult(
+            rotationMatrixZYX,
+            tempMatrix1_4x4,
+            tempMatrix2_4x4
+        )
+        matrix_transpose(tempMatrix2_4x4, tempMatrix1_4x4)
+    else
+        matrix_transpose(rotationMatrixZYX, tempMatrix1_4x4)
+    end
+
     vec_scale(cameraTranslation, -1, translationMatrix[4]) -- set translation in translationMatrix
 
     -- cameraTransformMatrix = perspectiveProjectionMatrix * rotationMatrixZYX^T * translationMatrix
-    matrix_mult(matrix_transpose(rotationMatrixZYX, tempMatrix1_4x4), translationMatrix, tempMatrix2_4x4)
+    matrix_mult(tempMatrix1_4x4, translationMatrix, tempMatrix2_4x4)
     matrix_mult(perspectiveProjectionMatrix, tempMatrix2_4x4, result_matrix4x4)
 end
 
 
 
 function onTick()
-    isRendering = input.getBool(1)
+    renderOn = input.getBool(1)
 
     -- Passthrough composite
     for i = 17, 32 do
@@ -159,9 +301,10 @@ function onTick()
         output.setBool(i, input.getBool(i))
     end
 
-    if isRendering then
+    if renderOn then
         do -- calc cameraTransformMatrix
-            local isFemale = input.getBool(2)
+            local isFemale, isHMD = input.getBool(2), input.getBool(5)
+
             vec_init3d(position,        getNumber3(1, 2, 3))    -- physics sensor
             vec_init3d(angle,           getNumber3(4, 5, 6))    -- physics sensor
             vec_init3d(linearVelocity,  getNumber3(7, 8, 9))    -- physics sensor
@@ -169,8 +312,13 @@ function onTick()
 
             local lookX = input.getNumber(13) -- lookX from seat
             local lookY = input.getNumber(14) -- lookY from seat
-            calcLocalHeadPosition(lookX, lookY, isFemale, head_position_offset)
-            calcCameraTransform(cameraTransformMatrix)
+
+            lookXY_estimation(lookX, lookY)
+            local lookEstX = lookX + look.sdlx * OFFSET.SeatTick
+            local lookEstY = lookY + look.sdly * OFFSET.SeatTick
+
+            calcLocalHeadPosition(lookEstX, lookEstY, isFemale, head_position_offset)
+            calcCameraTransform(isHMD, cameraTransformMatrix)
         end
 
         for i = 1, 4 do
@@ -268,7 +416,7 @@ function draw(points)
 end
 
 function onDraw()
-    if isRendering then
+    if renderOn then
         draw(axisPoints)
 
         if drawBuffer[1] then
