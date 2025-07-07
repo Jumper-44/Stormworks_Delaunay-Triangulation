@@ -78,8 +78,8 @@ end
 
 local position, linearVelocity, angle, angularVelocity, head_position_offset, cameraTranslation, tempVec1_3d, tempVec2_3d = {}, {}, {}, {}, {}, {}, {}, {}
 local renderOn, OFFSET = false, {}
-local tempMatrix1_3x3, tempMatrix2_3x3, tempMatrix3_3x3, tempMatrix4_3x3, tempMatrix1_4x4, tempMatrix2_4x4, translationMatrix, rotationMatrixZYX, perspectiveProjectionMatrix, cameraTransformMatrix =
-    matrix_initIdentity(3, 3), matrix_initIdentity(3, 3), matrix_initIdentity(3, 3), matrix_initIdentity(3, 3),
+local tempMatrix1_3x3, tempMatrix2_3x3, tempMatrix1_4x4, tempMatrix2_4x4, translationMatrix, rotationMatrixZYX, perspectiveProjectionMatrix, cameraTransformMatrix =
+    matrix_initIdentity(3, 3), matrix_initIdentity(3, 3),
     matrix_initIdentity(4, 4), matrix_initIdentity(4, 4),
     matrix_initIdentity(4, 4), matrix_initIdentity(4, 4), -- translationMatrix, rotationMatrixZYX
     matrix_init(4, 4), matrix_init(4, 4)                  -- perspectiveProjectionMatrix, cameraTransformMatrix
@@ -118,70 +118,67 @@ HMD.r     = HMD.t * 4/3   -- HMD.t * HMD.w / HMD.h
 HMD.l     = -HMD.r
 HMD.b     = -HMD.t
 
-local look = {
-    lookX = {}, lookY = {},
-    dlx = 0, dly = 0, -- delta look x|y
-    sdlx = 0, sdly = 0, -- smooth delta look x|y,   trying some smoothing as camera gets really jittery by mouse movement
---  amount = 4, -- (2 <= amount)
---  sf = 0.9, -- smooth factor
---  isf = 1-smooth_factor
---  invSumWeight
-}
-do
-    look.amount, look.sf = table.unpack(strToNumbers "MouseLook: History, Smoothing")
-    local n = look.amount-1
-    look.invSumWeight = 1 / (n*(n+1)*(2*n+1)/6)
-    look.isf = 1-look.sf
-end
+local l_vel_sf, l_vel_isf, l_acc_sf, l_acc_isf, l_jerk_sf, l_jerk_isf, l_t1, l_t2, l_t3
+l_t1 = property.getNumber("SeatTick") -- seat lookX|Y tick compensation (velocity)
+l_t2 = (l_t1+1)^2 / 2                                                -- (acceleration)
+l_t3 = (l_t1+2)^3 / 6                                                -- (jerk)
 
-for i = 1, look.amount do
-    look.lookX[i] = 0
-    look.lookY[i] = 0
-end
-
---local lookXMax, lookXMin = 0.35, -0.35
---local lookYMax, lookYMin = 0.2, -0.2
+l_vel_sf, l_acc_sf, l_jerk_sf = table.unpack(strToNumbers "Mouse (Vel, Acc, Jerk) Smoothing") -- example values are (0.875, 0.975, 0.999), jerk not really helping here and just doing jittery with this implementation, so may remove option later
+l_vel_isf, l_acc_isf, l_jerk_isf = 1-l_vel_sf, 1-l_acc_sf, 1-l_jerk_sf
+local l_ex, l_ey, l_x, l_y, l_dx, l_dy, l_ddx, l_ddy, l_dddx, l_dddy = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 -- nr. of 'd' are nr. of derivatives
+local l_px, l_py, l_pdx, l_pdy, l_pddx, l_pddy = 0, 0, 0, 0, 0, 0 -- 'p' is previous
+local lookXMax, lookXMin = 0.35, -0.35
+local lookYMax, lookYMin = 0.2, -0.2
 
 OFFSET.GPS_to_camera = strToNumbers "GPS_to_camera" -- Offset from physics sensor block to seat headrest block. (X:right, Y:up, Z:forward)
 OFFSET.PhysicsTick = property.getNumber("PhysicsTick")/60 -- physics sensor tick compensation
-OFFSET.SeatTick = property.getNumber("SeatTick")          -- seat lookX|Y tick compensation
 --#endregion Settings
 
 
----Cheap lerp of lookXY with short history to smooth.  
----Since LookXY are euler angles then I think this is wrong,  
----and need something like quaternion slerp, but I don't know.  
----Mouse movement feels really jittery, so trying some smoothing.
----@param this_lx number
----@param this_ly number
-function lookXY_estimation(this_lx, this_ly)
-    local lookX, lookY = look.lookX, look.lookY
-    table.insert(lookX, 1, this_lx)
-    table.insert(lookY, 1, this_ly)
-    table.remove(lookX)
-    table.remove(lookY)
+---Estimating mouse look X|Y with respect to velocity, acceleration and jerk  
+---(jerk not really helping)
+---with exponential smoothing to mitigate noisy/jittery movement
+---@param new_lx number
+---@param new_ly number
+function lookXY_estimation(new_lx, new_ly)
+    local dx, dy, ddx, ddy, dddx, dddy
+    dx = new_lx - l_px
+    dy = new_ly - l_py
+    ddx  = dx   - l_pdx
+    ddy  = dy   - l_pdy
+    dddx = clamp(ddx  - l_pddx, -0.001, 0.001)
+    dddy = clamp(ddy  - l_pddy, -0.001, 0.001)
 
-    local n, avgVelX, avgVelY, bias
-    n = look.amount
-    avgVelX, avgVelY = 0, 0
-    for i = 2, n do
-        bias = 1+n-i
-        bias = bias*bias -- bias should over all iterations of i, sum up to 100%
-        avgVelX = avgVelX + (lookX[i-1]-lookX[i]) * bias
-        avgVelY = avgVelY + (lookY[i-1]-lookY[i]) * bias
-    end
+    l_x    = new_lx
+    l_y    = new_ly
+    l_dx   = l_dx   * l_vel_sf  + dx   * l_vel_isf
+    l_dy   = l_dy   * l_vel_sf  + dy   * l_vel_isf
+    l_ddx  = l_ddx  * l_acc_sf  + ddx  * l_acc_isf
+    l_ddy  = l_ddy  * l_acc_sf  + ddy  * l_acc_isf
+    l_dddx = l_dddx * l_jerk_sf + dddx * l_jerk_isf
+    l_dddy = l_dddy * l_jerk_sf + dddy * l_jerk_isf
 
-    if math.abs(lookX[1]-lookX[2]) < 1e-5 and math.abs(lookY[1]-lookY[2]) < 1e-5 then
-        look.dlx = 0
-        look.dly = 0
-        look.sdlx = 0
-        look.sdly = 0
+    -- Don't predict if likely not moving mouse
+    if math.abs(dx) < 1e-9 and math.abs(dy) < 1e-9 then
+        l_ex = new_lx
+        l_ey = new_ly
+        l_dx = 0
+        l_dy = 0
+        l_ddx = 0
+        l_ddy = 0
+        l_dddx = 0
+        l_dddy = 0
     else
-        look.dlx = avgVelX * look.invSumWeight
-        look.dly = avgVelY * look.invSumWeight
-        look.sdlx = look.sdlx * look.isf + look.dlx * look.sf
-        look.sdly = look.sdly * look.isf + look.dly * look.sf
+        l_ex = clamp(l_x + l_dx*l_t1 + l_ddx*l_t2 + l_dddx*l_t3, lookXMin, lookXMax)
+        l_ey = clamp(l_y + l_dy*l_t1 + l_ddy*l_t2 + l_dddy*l_t3, lookYMin, lookYMax)
     end
+
+    l_px = new_lx
+    l_py = new_ly
+    l_pdx = dx
+    l_pdy = dy
+    l_pddx = ddx
+    l_pddy = ddy
 end
 
 
@@ -249,25 +246,9 @@ function calcCameraTransform(isHMD, result_matrix4x4)
     )
 
     if isHMD then -- apply player head rotation if HMD
-        local lx, ly, dlx, dly =
-            look.lookX[1], look.lookY[1],
-            look.sdlx, look.sdly
-
         matrix_mult(
-            matrix_getRotY( lx * tau, tempMatrix1_3x3),
-            matrix_getRotX(-ly * tau, tempMatrix2_3x3),
-            tempMatrix3_3x3
-        )
-
-        matrix_mult(
-            matrix_getRotY( dlx * tau * OFFSET.SeatTick, tempMatrix1_3x3),
-            matrix_getRotX(-dly * tau * OFFSET.SeatTick, tempMatrix2_3x3),
-            tempMatrix4_3x3
-        )
-
-        matrix_mult(
-            tempMatrix4_3x3,
-            tempMatrix3_3x3,
+            matrix_getRotY( l_ex * tau, tempMatrix1_3x3),
+            matrix_getRotX(-l_ey * tau, tempMatrix2_3x3),
             tempMatrix1_4x4
         )
 
@@ -276,6 +257,7 @@ function calcCameraTransform(isHMD, result_matrix4x4)
             tempMatrix1_4x4,
             tempMatrix2_4x4
         )
+
         matrix_transpose(tempMatrix2_4x4, tempMatrix1_4x4)
     else
         matrix_transpose(rotationMatrixZYX, tempMatrix1_4x4)
@@ -314,10 +296,7 @@ function onTick()
             local lookY = input.getNumber(14) -- lookY from seat
 
             lookXY_estimation(lookX, lookY)
-            local lookEstX = lookX + look.sdlx * OFFSET.SeatTick
-            local lookEstY = lookY + look.sdly * OFFSET.SeatTick
-
-            calcLocalHeadPosition(lookEstX, lookEstY, isFemale, head_position_offset)
+            calcLocalHeadPosition(l_ex, l_ey, isFemale, head_position_offset)
             calcCameraTransform(isHMD, cameraTransformMatrix)
         end
 
@@ -330,11 +309,19 @@ function onTick()
 
 end
 
-
-
-
-
 --[[ Debug
+function onDraw()
+    screen.setColor(255, 255, 0)
+    screen.drawText(0, HMD.h - 30, "Vel, Acc, Jerk:")
+    screen.drawText(0, HMD.h - 20, ("x: %+0.6f / %+0.6f / %+0.6f"):format(l_dx, l_ddx, l_dddx))
+    screen.drawText(0, HMD.h - 7,  ("y: %+0.6f / %+0.6f / %+0.6f"):format(l_dy, l_ddy, l_dddy))
+end
+--]]
+
+
+
+
+--[[ Debug (Not updated/working)
 -- Quick debug to draw the basis vectors of the world coordinate system to verify cameraTransformMatrix and other tests
 local o = 100
 local axisPoints = {{o+0, o+0, o+0, 1}, {o+1, o+0, o+0, 1}, {o+0, o+1, o+0, 1}, {o+0, o+0, o+1, 1}}
