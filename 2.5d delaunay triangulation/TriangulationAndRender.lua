@@ -62,9 +62,10 @@ local v_x, v_y, v_z, v_near_dtriangle, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVis
     dt_v1, dt_v2, dt_v3, dt_neighbor1, dt_neighbor2, dt_neighbor3, dt_isChecked, dt_isInvalid, dt_isSurface,            --dt shorthand for delaunay triangle
     dtriangle_check_queue, invalid_dtriangles, edge_boundary_neighbor, edge_boundary_v1, edge_boundary_v2, edge_shared,
     vertices, vertices_kdtree, vertices_buffer, triangles, triangles_buffer, dtriangles, dtriangles_neighbors, dtriangles_buffer,
-    cameraTransform, triangle_draw_buffer, -- all the variables here and above in this local statement are set as tables in initialize()
+    fPlaneRight, fPlaneLeft, fPlaneBottom, fPlaneTop, fPlaneBack, fPlaneFront, -- frustum planes
+    cameraTransform, triangle_draw_buffer, cameraPos, -- all the variables here and above in this local statement are set as tables in initialize()
     pointSub, add_vertex, add_dtriangle, initialize, -- functions
-    width, height, px_cx, px_cy, px_cx_pos, px_cy_pos, insertionTick, frameTick
+    width, height, px_cx, px_cy, px_cx_pos, px_cy_pos, insertionTick, frameTick, frustumPlanes
 
 local SCREEN, HMD, pointBuffer, point_min_density_squared, max_triangle_size_squared, triangle_buffer_refreshrate, max_drawn_triangles, colors =
     multiReadPropertyNumbers("SCREEN", {}),
@@ -140,11 +141,14 @@ function initialize()
     t_v1, t_v2, t_v3, t_colorR, t_colorG, t_colorB, t_centroidDepth,
     dt_v1, dt_v2, dt_v3, dt_neighbor1, dt_neighbor2, dt_neighbor3, dt_isChecked, dt_isInvalid, dt_isSurface,
     dtriangle_check_queue, invalid_dtriangles, edge_boundary_neighbor, edge_boundary_v1, edge_boundary_v2, edge_shared,
-    cameraTransform, triangle_draw_buffer
+    fPlaneRight, fPlaneLeft, fPlaneBottom, fPlaneTop, fPlaneBack, fPlaneFront,
+    cameraTransform, triangle_draw_buffer, cameraPos
       = (function(t)                        -- "inlined" new_tables function by making a direct 
-            for i = 1, 34 do t[i] = {} end  -- call to an anonymous function in which
-            return table.unpack(t)          -- parameter t = {} and returns 34 new tables
+            for i = 1, 41 do t[i] = {} end  -- call to an anonymous function in which
+            return table.unpack(t)          -- parameter t = {} and returns 41 new tables
         end){}
+
+    frustumPlanes = {fPlaneRight, fPlaneLeft, fPlaneBottom, fPlaneTop, fPlaneBack, fPlaneFront}
 
     vertices = list{v_x, v_y, v_z, v_near_dtriangle, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVisible, v_frame}
     vertices_kdtree = IKDTree(v_x, v_y, v_z)
@@ -447,6 +451,44 @@ function onTick()
             cameraTransform[i] = input.getNumber(i)
         end
 
+        for i = 1, 6 do  -- extract frustum planes https://github.com/EQMG/Acid/blob/master/Sources/Physics/Frustum.cpp
+            --local sign = (i%2*2-1) -- 1, -1, 1, -1, 1, -1
+            for j = 1, 4 do
+                frustumPlanes[i][j] = cameraTransform[j*4] + cameraTransform[(j-1)*4 + (i+1)//2] * (i%2*2-1)
+            end
+
+            -- normalize planes
+            local magnitude = (frustumPlanes[i][1]^2 + frustumPlanes[i][2]^2 + frustumPlanes[i][3]^2)^0.5
+            for j = 1, 4 do
+                frustumPlanes[i][j] = frustumPlanes[i][j] / magnitude
+            end
+        end
+
+        -- solving for camera world position given 3 frustum planes (that isn't far or near plane), so linear system with 3 variables
+        --local a = {fPlaneRight[1], fPlaneLeft[1], fPlaneBottom[1]}
+        --local b = {fPlaneRight[2], fPlaneLeft[2], fPlaneBottom[2]}
+        --local c = {fPlaneRight[3], fPlaneLeft[3], fPlaneBottom[3]}
+        --local d = {fPlaneRight[4], fPlaneLeft[4], fPlaneBottom[4]}
+        --local detABC = -det3d(a, b, c) -- https://en.wikipedia.org/wiki/Cramer%27s_rule#Explicit_formulas_for_small_systems
+        --cameraPos[1] = det3d(d, b, c) / detABC
+        --cameraPos[2] = det3d(a, d, c) / detABC
+        --cameraPos[3] = det3d(a, b, d) / detABC
+
+        local A, B, C, D, E, F
+        local a1, b1, c1, d1 = table.unpack(fPlaneRight)
+        local a2, b2, c2, d2 = table.unpack(fPlaneLeft)
+        local a3, b3, c3, d3 = table.unpack(fPlaneBottom)
+        A = b2*c3 - c2*b3
+        B = c2*a3 - a2*c3
+        C = a2*b3 - b2*a3
+        D = c2*d3 - d2*c3
+        E = d2*b3 - b2*d3
+        F = a2*d3 - d2*a3
+        d3 = -a1*A - b1*B - c1*C
+        cameraPos[1] = (d1*A + b1*D + c1*E) / d3
+        cameraPos[2] = (d1*B - a1*D + c1*F) / d3
+        cameraPos[3] = (d1*C - a1*E - b1*F) / d3
+
         color_alpha = 0
         for i = 25, 32 do
             color_alpha = color_alpha << 1 | (input.getBool(i) and 1 or 0)
@@ -495,6 +537,7 @@ function onDraw()
 
     screen.setColor(0, 255, 0)
     screen.drawText(5,5, ("DT/T/View: %i/%i/%i"):format(#dt_v1, #t_v1, #triangle_draw_buffer))
+    --screen.drawText(5, 13, ("Pos: %+0.6f / %+0.6f / %+0.6f"):format(cameraPos[1] or 0, cameraPos[2] or 0, cameraPos[3] or 0)) -- debug
 
     frameTick = frameTick + 1
 end
