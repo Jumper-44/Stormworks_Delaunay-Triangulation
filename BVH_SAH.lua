@@ -2,10 +2,7 @@
 -- GitHub: https://github.com/Jumper-44
 -- MIT License at end of this file
 
-
---[====[ EDITABLE SIMULATOR CONFIG - *automatically removed from the F7 build output ]====]
----@section __LB_SIMULATOR_ONLY__
---[[
+--[[ DEBUG ONLY
 do
     ---@type Simulator -- Set properties and screen sizes here - will run once when the script is loaded
     simulator = simulator
@@ -26,7 +23,6 @@ do
     end
 end
 --]]
----@endsection
 
 
 require("JumperLib.DataStructures.JL_list")
