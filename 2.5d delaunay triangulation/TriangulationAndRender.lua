@@ -55,7 +55,7 @@ local v_x, v_y, v_z, v_near_dtriangle, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVis
     dt_v1, dt_v2, dt_v3, dt_neighbor1, dt_neighbor2, dt_neighbor3, dt_isChecked, dt_isInvalid, dt_isSurface,            --dt shorthand for delaunay triangle
     dtriangle_check_queue, invalid_dtriangles, edge_boundary_neighbor, edge_boundary_v1, edge_boundary_v2, edge_shared,
     vertices, vertices_kdtree, vertices_buffer, triangles, triangles_buffer, dtriangles, dtriangles_neighbors, dtriangles_buffer,
-    bvh, minAABB_buffer, maxAABB_buffer, check_queue, inView_queue, check_queue_ptr, check_queue_size, inView_queue_ptr, inView_queue_size,
+    bvh, minAABB_buffer, maxAABB_buffer, check_queue, check_queue_ptr, check_queue_size,
     cameraTransform, triangleDrawBuffer,
     pointSub, add_vertex, add_dtriangle, -- functions
     px_cx, px_cy, px_cx_pos, px_cy_pos, frustumPlanes,
@@ -136,11 +136,11 @@ function initialize()
     dt_v1, dt_v2, dt_v3, dt_neighbor1, dt_neighbor2, dt_neighbor3, dt_isChecked, dt_isInvalid, dt_isSurface,
     dtriangle_check_queue, invalid_dtriangles, edge_boundary_neighbor, edge_boundary_v1, edge_boundary_v2, edge_shared,
     fPlaneRight, fPlaneLeft, fPlaneBottom, fPlaneTop, fPlaneBack, fPlaneFront,
-    minAABB_buffer, maxAABB_buffer, check_queue, inView_queue,
+    minAABB_buffer, maxAABB_buffer, check_queue,
     cameraTransform, triangleDrawBuffer
       = (function(t)                        -- "inlined" new_tables function by making a direct 
-            for i = 1, 44 do t[i] = {} end  -- call to an anonymous function in which
-            return table.unpack(t)          -- parameter t = {} and returns 44 new tables
+            for i = 1, 43 do t[i] = {} end  -- call to an anonymous function in which
+            return table.unpack(t)          -- parameter t = {} and returns 43 new tables
         end){}
 
     frustumPlanes = {fPlaneRight, fPlaneLeft, fPlaneBottom, fPlaneTop, fPlaneBack, fPlaneFront}
@@ -200,24 +200,24 @@ function initialize()
             Y = nyMax[n]
             Z = nzMax[n]
 
-            for p = 1, 6 do ---@cast p +table
-                p = frustumPlanes[p]
-                px = p[1]*x
-                pX = p[1]*X
-                py = p[2]*y
-                pY = p[2]*Y
-                pz = p[3]*z
-                pZ = p[3]*Z
-                p  = p[4]
+            for i = 1, 6 do ---@cast i +table
+                i = frustumPlanes[i]
+                px = i[1]*x
+                pX = i[1]*X
+                py = i[2]*y
+                pY = i[2]*Y
+                pz = i[3]*z
+                pZ = i[3]*Z
+                i  = -i[4]
 
-                if  (px + py + pz + p < 0) and
-                    (pX + py + pz + p < 0) and
-                    (px + pY + pz + p < 0) and
-                    (pX + pY + pz + p < 0) and
-                    (px + py + pZ + p < 0) and
-                    (pX + py + pZ + p < 0) and
-                    (px + pY + pZ + p < 0) and
-                    (pX + pY + pZ + p < 0)
+                if  (px + py + pz < i) and
+                    (pX + py + pz < i) and
+                    (px + pY + pz < i) and
+                    (pX + pY + pz < i) and
+                    (px + py + pZ < i) and
+                    (pX + py + pZ < i) and
+                    (px + pY + pZ < i) and
+                    (pX + pY + pZ < i)
                 then
                     goto reject
                 end
@@ -469,7 +469,7 @@ WorldToScreen_triangles = function()
         if -- (Most average cases) determining if triangle is visible / should be rendered
             v_inNearAndFar[v1] and v_inNearAndFar[v2] and v_inNearAndFar[v3]                                                                -- Are all vertices within near and far plane
             and (v_isVisible[v1] or v_isVisible[v2] or v_isVisible[v3])                                                                     -- and atleast 1 visible in frustum
-            and (v_sx[v1]*v_sy[v2] - v_sx[v2]*v_sy[v1] + v_sx[v2]*v_sy[v3] - v_sx[v3]*v_sy[v2] + v_sx[v3]*v_sy[v1] - v_sx[v1]*v_sy[v3] > 0) -- and is the triangle facing the camera (backface culling CCW. Flip '>' for CW. Can be removed if triangles aren't consistently ordered CCW/CW)
+--            and (v_sx[v1]*v_sy[v2] - v_sx[v2]*v_sy[v1] + v_sx[v2]*v_sy[v3] - v_sx[v3]*v_sy[v2] + v_sx[v3]*v_sy[v1] - v_sx[v1]*v_sy[v3] > 0) -- and is the triangle facing the camera (backface culling CCW. Flip '>' for CW. Can be removed if triangles aren't consistently ordered CCW/CW)
         then
             t_centroidDepth[currentTriangle] = v_sz[v1] + v_sz[v2] + v_sz[v3] -- centroid depth for sort
             i = i + 1
