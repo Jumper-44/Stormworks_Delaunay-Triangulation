@@ -410,51 +410,51 @@ do
                 end
             end
 
-            --function test_invariant(nodeID, depth)
-            --    local e = 1e-9
-            --    local minX, minY, minZ, maxX, maxY, maxZ
-            --    minX = nodes[6][nodeID]  - e
-            --    minY = nodes[7][nodeID]  - e
-            --    minZ = nodes[8][nodeID]  - e
-            --    maxX = nodes[9][nodeID]  + e
-            --    maxY = nodes[10][nodeID] + e
-            --    maxZ = nodes[11][nodeID] + e
-            --
-            --    for i = 1, 2 do
-            --        local child = nodes[i][nodeID]
-            --        if child then
-            --            if minX > nodes[6][child] or nodes[9][child]  > maxX
-            --            or minY > nodes[7][child] or nodes[10][child] > maxY
-            --            or minZ > nodes[8][child] or nodes[11][child] > maxZ
-            --            then
-            --                print("AABB bound error at child: "..tostring(child))
-            --            end
-            --            test_invariant(child, depth + 1)
-            --        end
-            --    end
-            --    if not (nodes[1][nodeID] and nodes[2][nodeID]) then
-            --        depthLevels[#depthLevels+1] = depth
-            --    end
-            --end
-            --test_invariant(bvh.BVH_rootIndex, 0)
-            --
-            --t1 = os.clock()
-            --table.sort(depthLevels)
-            --local depth = {} -- view variables in debug mode.  Depth level
-            --local depthAmount = {}  --                         Amount of leafs at the depth level in 'depth'
-            --
-            --local currentDepth, currentDepthID
-            --for i = 1, #depthLevels do
-            --    if currentDepth ~= depthLevels[i] then
-            --        currentDepth = depthLevels[i]
-            --        currentDepthID = #depth+1
-            --        depth[currentDepthID] = currentDepth
-            --        depthAmount[currentDepthID] = 1
-            --    else
-            --        depthAmount[currentDepthID] = depthAmount[currentDepthID] + 1
-            --    end
-            --end
-            --t2 = os.clock()
+            function test_invariant(nodeID, depth)
+                local e = 1e-9
+                local minX, minY, minZ, maxX, maxY, maxZ
+                minX = nodes[5][nodeID]  - e
+                minY = nodes[6][nodeID]  - e
+                minZ = nodes[7][nodeID]  - e
+                maxX = nodes[8][nodeID]  + e
+                maxY = nodes[9][nodeID]  + e
+                maxZ = nodes[10][nodeID] + e
+
+                for i = 1, 2 do
+                    local child = nodes[i][nodeID]
+                    if child then
+                        if minX > nodes[5][child] or nodes[8][child]  > maxX
+                        or minY > nodes[6][child] or nodes[9][child]  > maxY
+                        or minZ > nodes[7][child] or nodes[10][child] > maxZ
+                        then
+                            print("AABB bound error at child: "..tostring(child))
+                        end
+                        test_invariant(child, depth + 1)
+                    end
+                end
+                if not (nodes[1][nodeID] and nodes[2][nodeID]) then
+                    depthLevels[#depthLevels+1] = depth
+                end
+            end
+            test_invariant(bvh.BVH_rootIndex, 0)
+            
+            t1 = os.clock()
+            table.sort(depthLevels)
+            local depth = {} -- view variables in debug mode.  Depth level
+            local depthAmount = {}  --                         Amount of leafs at the depth level in 'depth'
+            
+            local currentDepth, currentDepthID
+            for i = 1, #depthLevels do
+                if currentDepth ~= depthLevels[i] then
+                    currentDepth = depthLevels[i]
+                    currentDepthID = #depth+1
+                    depth[currentDepthID] = currentDepth
+                    depthAmount[currentDepthID] = 1
+                else
+                    depthAmount[currentDepthID] = depthAmount[currentDepthID] + 1
+                end
+            end
+            t2 = os.clock()
             --print("--- Ran test_invariant in "..(t2-t1).." ---")
         else
             tick = tick + 1
