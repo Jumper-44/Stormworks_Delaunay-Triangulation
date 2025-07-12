@@ -3,13 +3,6 @@
 -- Workshop: https://steamcommunity.com/profiles/76561198084249280/myworkshopfiles/
 --
 --- Developed using LifeBoatAPI - Stormworks Lua plugin for VSCode - https://code.visualstudio.com/download (search "Stormworks Lua with LifeboatAPI" extension)
---- If you have any issues, please report them here: https://github.com/nameouschangey/STORMWORKS_VSCodeExtension/issues - by Nameous Changey
-
-
---[====[ HOTKEYS ]====]
--- Press F6 to simulate this file
--- Press F7 to build the project, copy the output from /_build/out/ into the game to use
--- Remember to set your Author name etc. in the settings: CTRL+COMMA
 
 
 --[====[ EDITABLE SIMULATOR CONFIG - *automatically removed from the F7 build output ]====]
@@ -18,13 +11,11 @@ do
     ---@type Simulator -- Set properties and screen sizes here - will run once when the script is loaded
     simulator = simulator
     simulator:setScreen(1, "3x3")
-    simulator:setProperty("ExampleNumberProperty", 123)
 
     -- Runs every tick just before onTick; allows you to simulate the inputs changing
     ---@param simulator Simulator Use simulator:<function>() to set inputs etc.
     ---@param ticks     number Number of ticks since simulator started
     function onLBSimulatorTick(simulator, ticks)
-
     end;
 end
 ---@endsection
@@ -33,8 +24,10 @@ end
 --[====[ IN-GAME CODE ]====]
 
 -- require https://github.com/Jumper-44/Stormworks_JumperLib
-require("JumperLib.DataStructures.JL_list")   -- list{}, main point of this is to initialize and organize multiple tables in array and not hashmap part
-require("JumperLib.DataStructures.JL_kdtree") -- using IKDTree()
+require("JL_list") -- list{}, main point of this is to initialize and organize multiple tables in array and not hashmap part
+require("IKDTREE")
+require("BVH_SAH")
+
 
 ---@param str string
 ---@param t table
@@ -62,18 +55,21 @@ local v_x, v_y, v_z, v_near_dtriangle, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVis
     dt_v1, dt_v2, dt_v3, dt_neighbor1, dt_neighbor2, dt_neighbor3, dt_isChecked, dt_isInvalid, dt_isSurface,            --dt shorthand for delaunay triangle
     dtriangle_check_queue, invalid_dtriangles, edge_boundary_neighbor, edge_boundary_v1, edge_boundary_v2, edge_shared,
     vertices, vertices_kdtree, vertices_buffer, triangles, triangles_buffer, dtriangles, dtriangles_neighbors, dtriangles_buffer,
-    fPlaneRight, fPlaneLeft, fPlaneBottom, fPlaneTop, fPlaneBack, fPlaneFront, -- frustum planes
-    cameraTransform, triangle_draw_buffer, cameraPos, -- all the variables here and above in this local statement are set as tables in initialize()
-    pointSub, add_vertex, add_dtriangle, initialize, -- functions
-    width, height, px_cx, px_cy, px_cx_pos, px_cy_pos, insertionTick, frameTick, frustumPlanes
+    bvh, minAABB_buffer, maxAABB_buffer, check_queue, inView_queue, check_queue_ptr, check_queue_size, inView_queue_ptr, inView_queue_size,
+    cameraTransform,
+    pointSub, add_vertex, add_dtriangle, -- functions
+    px_cx, px_cy, px_cx_pos, px_cy_pos, frustumPlanes,
+    v1, v2, v3,
+    nChild1, nChild2, nItem, nxMin, nyMin, nzMin, nxMax, nyMax, nzMax, n, c1, c2, x, y, z, w, X, Y, Z
 
-local SCREEN, HMD, pointBuffer, point_min_density_squared, max_triangle_size_squared, triangle_buffer_refreshrate, max_drawn_triangles, colors =
+local SCREEN, HMD, pointBuffer, point_min_density_squared, max_triangle_size_squared, triangle_buffer_refreshrate, max_drawn_triangles, colors, b2num =
     multiReadPropertyNumbers("SCREEN", {}),
     {256, 192, 128, 96, 128, 96}, -- {width, height, width/2, height/2, width/2, height/2}
     {0,0,0},
     property.getNumber("Min_D"), property.getNumber("Max_T"),
     property.getNumber("TBR"),   property.getNumber("MDT"),
-    {{flat = strToNumbers "WF", steep = strToNumbers "WS"}, {flat = strToNumbers "GF", steep = strToNumbers "GS"}} -- colors = {color_water, color_ground}
+    {{flat = strToNumbers "WF", steep = strToNumbers "WS"}, {flat = strToNumbers "GF", steep = strToNumbers "GS"}}, -- colors = {color_water, color_ground}
+    {[false] = 0, [true] = 1} -- b2num
 
 --local SCREEN = {
 --  [1]  w              -- Pixel width of screen
@@ -103,11 +99,11 @@ end
 ---@param y number world y-coordinate
 ---@param z number world z-coordinate
 ---@return integer vertexID
-function add_vertex(x, y, z)
+function add_vertex(x, y, z, pointID)
     vertices_buffer[1] = x
     vertices_buffer[2] = y
     vertices_buffer[3] = z
-    local pointID = vertices.list_insert(vertices_buffer)
+    pointID = vertices.list_insert(vertices_buffer)
     vertices_kdtree.IKDTree_insert(pointID)
     return pointID
 end
@@ -116,9 +112,7 @@ end
 ---@param v2 integer
 ---@param v3 integer
 ---@return integer
-function add_dtriangle(v1, v2, v3) -- checking sign of 2d determinant to set triangle orientation and inserts triangle in list
-    local adx, ady, bdx, bdy, ccw
-
+function add_dtriangle(v1, v2, v3, adx, ady, bdx, bdy, ccw) -- checking sign of 2d determinant to set triangle orientation and inserts triangle in list
     adx, ady = pointSub(v1, v3)
     bdx, bdy = pointSub(v2, v3)
     ccw = adx * bdy - ady * bdx < 0
@@ -142,10 +136,11 @@ function initialize()
     dt_v1, dt_v2, dt_v3, dt_neighbor1, dt_neighbor2, dt_neighbor3, dt_isChecked, dt_isInvalid, dt_isSurface,
     dtriangle_check_queue, invalid_dtriangles, edge_boundary_neighbor, edge_boundary_v1, edge_boundary_v2, edge_shared,
     fPlaneRight, fPlaneLeft, fPlaneBottom, fPlaneTop, fPlaneBack, fPlaneFront,
-    cameraTransform, triangle_draw_buffer, cameraPos
+    minAABB_buffer, maxAABB_buffer, check_queue, inView_queue,
+    cameraTransform, triangle_draw_buffer
       = (function(t)                        -- "inlined" new_tables function by making a direct 
-            for i = 1, 41 do t[i] = {} end  -- call to an anonymous function in which
-            return table.unpack(t)          -- parameter t = {} and returns 41 new tables
+            for i = 1, 44 do t[i] = {} end  -- call to an anonymous function in which
+            return table.unpack(t)          -- parameter t = {} and returns 44 new tables
         end){}
 
     frustumPlanes = {fPlaneRight, fPlaneLeft, fPlaneBottom, fPlaneTop, fPlaneBack, fPlaneFront}
@@ -174,8 +169,80 @@ function initialize()
     add_vertex(9E5,  0, -9E5)
     add_vertex(0,    0,  9E5)
     add_dtriangle(1, 2, 3)
+
+    bvh = BVH_AABB()
+
+    nChild1, nChild2, nParent, nItem, nxMin, nyMin, nzMin, nxMax, nyMax, nzMax = table.unpack(bvh.BVH_nodes)
+    function frustumCullBVH(triBuffer)
+        check_queue_ptr = 1
+        check_queue_size = 1
+        inView_queue_ptr = 1
+        inView_queue_size = 0
+        check_queue[1] = bvh.BVH_rootIndex
+
+        -- https://web.archive.org/web/20030810032130/http://www.markmorley.com:80/opengl/frustumculling.html
+        repeat
+            n = check_queue[check_queue_ptr]
+            if nItem[n] then
+                triBuffer[#triBuffer+1] = nItem[n]
+            else
+                x = nxMin[n]
+                y = nyMin[n]
+                z = nzMin[n]
+                X = nxMax[n]
+                Y = nyMax[n]
+                Z = nzMax[n]
+                c2 = 0
+
+                for p = 1, 6 do
+                    p = frustumPlanes[p]
+                    c1 =      b2num[ p[1]*x + p[2]*y + p[3]*z + p[4] > 0 ]
+                    c1 = c1 + b2num[ p[1]*X + p[2]*y + p[3]*z + p[4] > 0 ]
+                    c1 = c1 + b2num[ p[1]*x + p[2]*Y + p[3]*z + p[4] > 0 ]
+                    c1 = c1 + b2num[ p[1]*x + p[2]*y + p[3]*Z + p[4] > 0 ]
+                    c1 = c1 + b2num[ p[1]*X + p[2]*Y + p[3]*z + p[4] > 0 ]
+                    c1 = c1 + b2num[ p[1]*x + p[2]*Y + p[3]*Z + p[4] > 0 ]
+                    c1 = c1 + b2num[ p[1]*X + p[2]*y + p[3]*Z + p[4] > 0 ]
+                    c1 = c1 + b2num[ p[1]*X + p[2]*Y + p[3]*Z + p[4] > 0 ]
+
+                    if c1 == 0 then
+                        break
+                    end
+                    c2 = c2 + b2num[c1 == 8]
+                end
+
+                if c2 == 6 then
+                    inView_queue_size = inView_queue_size + 2
+                    inView_queue[inView_queue_size-1] = nChild1[n]
+                    inView_queue[inView_queue_size]   = nChild2[n]
+                elseif c2 > 0 then
+                    check_queue_size = check_queue_size + 2
+                    check_queue[check_queue_size-1] = nChild1[n]
+                    check_queue[check_queue_size]   = nChild2[n]
+                end
+            end
+
+            check_queue_ptr = check_queue_ptr + 1
+        until check_queue_ptr > check_queue_size
+
+        while inView_queue_ptr <= inView_queue_size do
+            n = inView_queue[inView_queue_ptr]
+            if nItem[n] then
+                triBuffer[#triBuffer+1] = nItem[n]
+            else
+                inView_queue_size = inView_queue_size + 2
+                inView_queue[inView_queue_size-1] = nChild1[n]
+                inView_queue[inView_queue_size]   = nChild2[n]
+            end
+
+            inView_queue_ptr = inView_queue_ptr + 1
+        end
+
+        return triBuffer
+    end
 end
 initialize()
+
 
 ---https://en.wikipedia.org/wiki/Delaunay_triangulation#Algorithms  
 ---https://www.cs.cmu.edu/afs/cs/project/quake/public/code/predicates.c  
@@ -191,7 +258,6 @@ initialize()
 ---@param p integer
 ---@return number
 function incirclefast(v1, v2, v3, p)
-    local adx, ady, bdx, bdy, cdx, cdy
     adx, ady = pointSub(v1, p)
     bdx, bdy = pointSub(v2, p)
     cdx, cdy = pointSub(v3, p)
@@ -209,7 +275,6 @@ end
 ---@param v3 integer
 ---@return number radius_squared
 function min_enclosing_circleradius_of_triangle(v1, v2, v3)
-    local abx, aby, bcx, bcy, cax, cay, ab, bc, ca, maxVal
     abx, aby = pointSub(v2, v1)
     bcx, bcy = pointSub(v3, v2)
     cax, cay = pointSub(v1, v3)
@@ -280,7 +345,9 @@ function dt_insert_point(nearVertexID, point)
         end
 
         if dt_isSurface[current_triangle] then
-            triangles.list_remove(dt_isSurface[current_triangle]) -- mark invalid triangles of final mesh for removal, i.e. getting overwritten when new are added
+            i = dt_isSurface[current_triangle]
+            triangles.list_remove(nItem[i]) -- mark invalid triangles of final mesh for removal, i.e. getting overwritten when new are added
+            bvh.BVH_remove(i)
         end
 
         dtriangles.list_remove(current_triangle) -- mark invalid triangles for removal, i.e. getting overwritten when new are added
@@ -319,7 +386,6 @@ function dt_insert_point(nearVertexID, point)
         end
 
         -- Test if triangle should be added to final mesh
-        local v1, v2, v3, adz, bdz, cdx, cdy, t, inv_t, c
         v1 = dt_v1[new_triangle]
         v2 = dt_v2[new_triangle]
         v3 = dt_v3[new_triangle]
@@ -339,9 +405,13 @@ function dt_insert_point(nearVertexID, point)
             for j = 1, 3 do
                 triangles_buffer[j] = dtriangles[j][new_triangle]
                 triangles_buffer[j+3] = (c.flat[j]*t + c.steep[j]*inv_t) * t*t*0.7 + 0.3 -- rgb
+
+                i = vertices[j] -- note that lua overrides i each loop with correct iteration
+                minAABB_buffer[j] = math.min(i[v1], i[v2], i[v3])
+                maxAABB_buffer[j] = math.max(i[v1], i[v2], i[v3])
             end
 
-            dt_isSurface[new_triangle] = triangles.list_insert(triangles_buffer)
+            dt_isSurface[new_triangle] = bvh.BVH_insert(triangles.list_insert(triangles_buffer), minAABB_buffer, maxAABB_buffer)
         end
     end
 
@@ -358,19 +428,16 @@ end
 ---@param triangle_buffer table
 ---@return table
 WorldToScreen_triangles = function(triangle_buffer)
-    local new_triangle_buffer, refreshCurrentFrame, currentTriangle, vertex_id, X, Y, Z, x, y, z, w, v1, v2, v3
-    new_triangle_buffer = {}
+    local refreshCurrentFrame, currentTriangle, vertex_id, i, tb_size
     refreshCurrentFrame = frameTick % triangle_buffer_refreshrate == 0
 
-    --if refreshCurrentFrame then
-    --    triangle_buffer = {}
-    --
-    --    -- [[ only used in debug draw
-    --    triangle_buffer_len_debug = #triangle_buffer
-    --    --]]
-    --end
+    if refreshCurrentFrame then
+        triangle_buffer = bvh.BVH_rootIndex and frustumCullBVH{} or {}
+    end
 
-    for i = 1, #triangle_buffer do
+    i = 1
+    tb_size = #triangle_buffer
+    while i < tb_size do
         currentTriangle = triangle_buffer[i]
 
         for j = 1, 3 do
@@ -411,19 +478,24 @@ WorldToScreen_triangles = function(triangle_buffer)
             and (v_sx[v1]*v_sy[v2] - v_sx[v2]*v_sy[v1] + v_sx[v2]*v_sy[v3] - v_sx[v3]*v_sy[v2] + v_sx[v3]*v_sy[v1] - v_sx[v1]*v_sy[v3] > 0) -- and is the triangle facing the camera (backface culling CCW. Flip '>' for CW. Can be removed if triangles aren't consistently ordered CCW/CW)
         then
             t_centroidDepth[currentTriangle] = v_sz[v1] + v_sz[v2] + v_sz[v3] -- centroid depth for sort
-            new_triangle_buffer[#new_triangle_buffer+1] = currentTriangle
+        else -- remove
+            t_centroidDepth[currentTriangle] = v_sz[v1] + v_sz[v2] + v_sz[v3] -- centroid depth for sort
+            -- triangle_buffer[i] = triangle_buffer[tb_size]
+            -- triangle_buffer[tb_size] = nil
+            -- tb_size = tb_size - 1
         end
+        i = i + 1
     end
 
     if refreshCurrentFrame then
-        table.sort(new_triangle_buffer, WorldToScreen_triangles_sortFunction) -- painter's algorithm | triangle centroid depth sort
+        table.sort(triangle_buffer, WorldToScreen_triangles_sortFunction) -- painter's algorithm | triangle centroid depth sort
 
-        for i = max_drawn_triangles, #new_triangle_buffer do
-            new_triangle_buffer[i] = nil
+        for i = max_drawn_triangles, #triangle_buffer do
+            triangle_buffer[i] = nil
         end
     end
 
-    return new_triangle_buffer
+    return triangle_buffer
 end
 
 function onTick()
@@ -465,29 +537,21 @@ function onTick()
         end
 
         -- solving for camera world position given 3 frustum planes (that isn't far or near plane), so linear system with 3 variables
-        --local a = {fPlaneRight[1], fPlaneLeft[1], fPlaneBottom[1]}
-        --local b = {fPlaneRight[2], fPlaneLeft[2], fPlaneBottom[2]}
-        --local c = {fPlaneRight[3], fPlaneLeft[3], fPlaneBottom[3]}
-        --local d = {fPlaneRight[4], fPlaneLeft[4], fPlaneBottom[4]}
-        --local detABC = -det3d(a, b, c) -- https://en.wikipedia.org/wiki/Cramer%27s_rule#Explicit_formulas_for_small_systems
-        --cameraPos[1] = det3d(d, b, c) / detABC
-        --cameraPos[2] = det3d(a, d, c) / detABC
-        --cameraPos[3] = det3d(a, b, d) / detABC
-
-        local A, B, C, D, E, F
-        local a1, b1, c1, d1 = table.unpack(fPlaneRight)
-        local a2, b2, c2, d2 = table.unpack(fPlaneLeft)
-        local a3, b3, c3, d3 = table.unpack(fPlaneBottom)
-        A = b2*c3 - c2*b3
-        B = c2*a3 - a2*c3
-        C = a2*b3 - b2*a3
-        D = c2*d3 - d2*c3
-        E = d2*b3 - b2*d3
-        F = a2*d3 - d2*a3
-        d3 = -a1*A - b1*B - c1*C
-        cameraPos[1] = (d1*A + b1*D + c1*E) / d3
-        cameraPos[2] = (d1*B - a1*D + c1*F) / d3
-        cameraPos[3] = (d1*C - a1*E - b1*F) / d3
+        -- https://en.wikipedia.org/wiki/Cramer%27s_rule#Explicit_formulas_for_small_systems
+        --local A, B, C, D, E, F
+        --local a1, b1, c1, d1 = table.unpack(fPlaneRight)
+        --local a2, b2, c2, d2 = table.unpack(fPlaneLeft)
+        --local a3, b3, c3, d3 = table.unpack(fPlaneBottom)
+        --A = b2*c3 - c2*b3
+        --B = c2*a3 - a2*c3
+        --C = a2*b3 - b2*a3
+        --D = c2*d3 - d2*c3
+        --E = d2*b3 - b2*d3
+        --F = a2*d3 - d2*a3
+        --d3 = -a1*A - b1*B - c1*C
+        --cameraPos[1] = (d1*A + b1*D + c1*E) / d3
+        --cameraPos[2] = (d1*B - a1*D + c1*F) / d3
+        --cameraPos[3] = (d1*C - a1*E - b1*F) / d3
 
         color_alpha = 0
         for i = 25, 32 do
@@ -517,11 +581,7 @@ function onDraw()
             screen.setColor,
             drawWireframe and screen.drawTriangle or screen.drawTriangleF
 
-        local t_debug = {}
-        for i = 1, #t_v1 do t_debug[i] = i end
-
-        triangle_draw_buffer = WorldToScreen_triangles(t_debug)
-        local v1, v2, v3
+        triangle_draw_buffer = WorldToScreen_triangles(triangle_draw_buffer)
         for i = 1, #triangle_draw_buffer do
             i = triangle_draw_buffer[i]
             v1 = t_v1[i]
@@ -537,6 +597,7 @@ function onDraw()
 
     screen.setColor(0, 255, 0)
     screen.drawText(5,5, ("DT/T/View: %i/%i/%i"):format(#dt_v1, #t_v1, #triangle_draw_buffer))
+    screen.drawText(5,13, #bvh.BVH_nodes[1]) -- debug
     --screen.drawText(5, 13, ("Pos: %+0.6f / %+0.6f / %+0.6f"):format(cameraPos[1] or 0, cameraPos[2] or 0, cameraPos[3] or 0)) -- debug
 
     frameTick = frameTick + 1
