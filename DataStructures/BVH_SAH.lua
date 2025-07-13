@@ -98,7 +98,9 @@ BVH_AABB = function()
     ---@param node integer|false
     ---@param i1 any local variable
     ---@param i2 any local variable
-    BVH.BVH_refitAABBs = function(node, i1, i2)
+    ---@param sameSA any local variable
+    ---@param prevMaxDepth any local variable
+    BVH.BVH_refitAABBs = function(node, i1, i2, sameSA, prevMaxDepth)
 --#if without tree rotation
 --        while node do
 --            unionNodeAABB(node_child1[node], node_child2[node])
@@ -111,7 +113,7 @@ BVH_AABB = function()
 --            node = node_parent[node]
 --        end
 --
---#elseif with tree rotation, no node depth penalty
+--#elseif with tree rotation, no node depth penalty, no early termination
 --        while node do
 --            unionNodeAABB(node_child1[node], node_child2[node])
 --            updateNodeAABB(node, AABB_min_buffer, AABB_max_buffer)
@@ -143,36 +145,49 @@ BVH_AABB = function()
 --            node = temp1
 --        end
 --
---#elseif with tree rotation and depth penalty to balance tree more
+--#elseif with tree rotation and depth penalty to balance tree more, with early termination
+        sameSA = false
         while node do
             i1 = node_child1[node]
             i2 = node_child2[node]
-            unionNodeAABB(i1, i2)
-            updateNodeAABB(node, AABB_min_buffer, AABB_max_buffer)
-            node_surfaceArea[node] = surfaceAreaAABB(AABB_min_buffer, AABB_max_buffer)
+            prevMaxDepth = node_maxDepth[node]
             node_maxDepth[node] = math.max(node_maxDepth[i1], node_maxDepth[i2]) + 1
 
-            -- Try tree rotation [Reference: Page 111-127], specifically [Reference: Page 115], where F in ref. is 'node'
-            temp1 = node_parent[node]
-            if temp1 then -- not root
-                temp2 = node_parent[temp1] -- 'node'.parent.parent
-                if temp2 then -- not root
-                    i1 = node_child1[temp1] == node and 2 or 1
-                    temp3 = nodes[i1][temp1] -- 'node' sibling
+            temp1 = node_parent[node] -- 'node'.parent
 
-                    i2 = node_child1[temp2] == temp1 and 2 or 1
-                    temp4 = nodes[i2][temp2] -- 'node'.parent sibling
+            if sameSA then
+                if prevMaxDepth == node_maxDepth[node] then
+                    break
+                end
+            else
+                unionNodeAABB(i1, i2)
+                updateNodeAABB(node, AABB_min_buffer, AABB_max_buffer)
 
-                    unionNodeAABB(node, temp3)
-                    best_cost = surfaceAreaAABB(AABB_min_buffer, AABB_max_buffer)
-                    unionNodeAABB(temp3, temp4)
-                    if surfaceAreaAABB(AABB_min_buffer, AABB_max_buffer) / best_cost                       -- SAH with depth penalty
-                                                  + node_maxDepth[temp4] / node_maxDepth[node] * 0.5 < 1.5 -- SA_new / SA_old + (D_new / D_old) * D_factor < 1 + D_factor
-                    then
-                       node_parent[temp4] = temp1
-                       node_parent[node]  = temp2
-                       nodes[i1%2+1][temp1] = temp4
-                       nodes[i2][temp2] = node
+                temp2 = node_surfaceArea[node]                            -- SA before update
+                temp3 = surfaceAreaAABB(AABB_min_buffer, AABB_max_buffer) -- SA after update
+                sameSA = temp2 == temp3
+                node_surfaceArea[node] = temp3
+
+                -- Try tree rotation [Reference: Page 111-127], specifically [Reference: Page 115], where F in ref. is 'node'
+                if not sameSA and temp1 then -- not root
+                    temp2 = node_parent[temp1] -- 'node'.parent.parent
+                    if temp2 then -- not root
+                        i1 = node_child1[temp1] == node and 2 or 1
+                        temp3 = nodes[i1][temp1] -- 'node' sibling
+
+                        i2 = node_child1[temp2] == temp1 and 2 or 1
+                        temp4 = nodes[i2][temp2] -- 'node'.parent sibling
+
+                        unionNodeAABB(temp3, temp4)
+                        best_sibling = surfaceAreaAABB(AABB_min_buffer, AABB_max_buffer)
+                        unionNodeAABB(node, temp3)
+                        best_cost = surfaceAreaAABB(AABB_min_buffer, AABB_max_buffer)
+                        if best_sibling / best_cost < 1 + node_maxDepth[node] - node_maxDepth[temp4] then -- SAH with depth penalty
+                            node_parent[temp4] = temp1
+                            node_parent[node]  = temp2
+                            nodes[i1%2+1][temp1] = temp4
+                            nodes[i2][temp2] = node
+                        end
                     end
                 end
             end
@@ -312,14 +327,10 @@ end
 ---@section __DEBUG_BVH_AABB__
 --[[ DEBUG. Inserting and deleting from BVH, as well as rendering tree nodes illustration.
 do
-    -- n = 5k, depthFactor = 0.00, treeCost: 1.8905773941246e+15, maxDepth: 28   (very unbalanced tree)
-    -- n = 5k, depthFactor = 0.10, treeCost: 2.4725624528924e+15, maxDepth: 21
-    -- n = 5k, depthFactor = 0.25, treeCost: 2.4834174710881e+15, maxDepth: 18
-    -- n = 5k, depthFactor = 0.50, treeCost: 2.7384867342652e+15, maxDepth: 17
-    -- n = 5k, depthFactor = 1.00, treeCost: 2.9533637826541e+15, maxDepth: 17
-    local n = 500 -- Amount of AABB/objects to insert
-    local objectsPerInsertion = 500
+    local n = 10000 -- Amount of AABB/objects to insert
+    local objectsPerInsertion = 200
     local treeDrawWidthScale = 20
+    debug = 0
 
     local bvh = BVH_AABB()
     local AABB_minX, AABB_minY, AABB_minZ, AABB_maxX, AABB_maxY, AABB_maxZ, BVH_ID = {},{},{}, {},{},{}, {}
@@ -340,15 +351,28 @@ do
     end
 
     local temp = 0
-    for i = 1, n do
-        for j = 1, 3 do
-            temp = rand(1000000) -- can change argument
-
-            AABB_buffer[j]   = temp - 4 + rand(3)
-            AABB_buffer[j+3] = temp + 4 + rand(3)
+    AABB_buffer[3] = 0
+    AABB_buffer[6] = 0
+    for i = 1, math.ceil(n^0.5) do
+        for j = 1, math.ceil(n^0.5) do
+            temp = rand(50000)
+            AABB_buffer[1] = temp - 4 + rand(50)
+            AABB_buffer[2] = temp - 4 + rand(50)
+            AABB_buffer[4] = temp + 4 + rand(50)
+            AABB_buffer[5] = temp + 4 + rand(50)
+            AABB.list_insert(AABB_buffer)
         end
-        AABB.list_insert(AABB_buffer)
     end
+
+--    for i = 1, n do
+--        for j = 1, 3 do
+--            temp = rand(10000)
+--            AABB_buffer[j]   = temp - 50 + rand(50)
+--            AABB_buffer[j+3] = temp + 50 + rand(50)
+--        end
+--        AABB.list_insert(AABB_buffer)
+--    end
+
 --
 --    local t1 = os.clock()
 --    for i = 1, n do
@@ -378,7 +402,7 @@ do
     --- Ensure that child nodes AABB reside in parent AABB (invariant)
     --- Calculate all leaf nodes depth in tree
     ---
-    local tick = -120 -- set negative for tick delay
+    local tick = -60 -- set negative for tick delay
     local drawBVH
     local count = 0
     local reverse = false
@@ -410,51 +434,51 @@ do
                 end
             end
 
-            function test_invariant(nodeID, depth)
-                local e = 1e-9
-                local minX, minY, minZ, maxX, maxY, maxZ
-                minX = nodes[5][nodeID]  - e
-                minY = nodes[6][nodeID]  - e
-                minZ = nodes[7][nodeID]  - e
-                maxX = nodes[8][nodeID]  + e
-                maxY = nodes[9][nodeID]  + e
-                maxZ = nodes[10][nodeID] + e
-
-                for i = 1, 2 do
-                    local child = nodes[i][nodeID]
-                    if child then
-                        if minX > nodes[5][child] or nodes[8][child]  > maxX
-                        or minY > nodes[6][child] or nodes[9][child]  > maxY
-                        or minZ > nodes[7][child] or nodes[10][child] > maxZ
-                        then
-                            print("AABB bound error at child: "..tostring(child))
-                        end
-                        test_invariant(child, depth + 1)
-                    end
-                end
-                if not (nodes[1][nodeID] and nodes[2][nodeID]) then
-                    depthLevels[#depthLevels+1] = depth
-                end
-            end
-            test_invariant(bvh.BVH_rootIndex, 0)
-            
-            t1 = os.clock()
-            table.sort(depthLevels)
-            local depth = {} -- view variables in debug mode.  Depth level
-            local depthAmount = {}  --                         Amount of leafs at the depth level in 'depth'
-            
-            local currentDepth, currentDepthID
-            for i = 1, #depthLevels do
-                if currentDepth ~= depthLevels[i] then
-                    currentDepth = depthLevels[i]
-                    currentDepthID = #depth+1
-                    depth[currentDepthID] = currentDepth
-                    depthAmount[currentDepthID] = 1
-                else
-                    depthAmount[currentDepthID] = depthAmount[currentDepthID] + 1
-                end
-            end
-            t2 = os.clock()
+--            function test_invariant(nodeID, depth)
+--                local e = 1e-9
+--                local minX, minY, minZ, maxX, maxY, maxZ
+--                minX = nodes[5][nodeID]  - e
+--                minY = nodes[6][nodeID]  - e
+--                minZ = nodes[7][nodeID]  - e
+--                maxX = nodes[8][nodeID]  + e
+--                maxY = nodes[9][nodeID]  + e
+--                maxZ = nodes[10][nodeID] + e
+--
+--                for i = 1, 2 do
+--                    local child = nodes[i][nodeID]
+--                    if child then
+--                        if minX > nodes[5][child] or nodes[8][child]  > maxX
+--                        or minY > nodes[6][child] or nodes[9][child]  > maxY
+--                        or minZ > nodes[7][child] or nodes[10][child] > maxZ
+--                        then
+--                            print("AABB bound error at child: "..tostring(child))
+--                        end
+--                        test_invariant(child, depth + 1)
+--                    end
+--                end
+--                if not (nodes[1][nodeID] and nodes[2][nodeID]) then
+--                    depthLevels[#depthLevels+1] = depth
+--                end
+--            end
+--            test_invariant(bvh.BVH_rootIndex, 0)
+--
+--            t1 = os.clock()
+--            table.sort(depthLevels)
+--            local depth = {} -- view variables in debug mode.  Depth level
+--            local depthAmount = {}  --                         Amount of leafs at the depth level in 'depth'
+--
+--            local currentDepth, currentDepthID
+--            for i = 1, #depthLevels do
+--                if currentDepth ~= depthLevels[i] then
+--                    currentDepth = depthLevels[i]
+--                    currentDepthID = #depth+1
+--                    depth[currentDepthID] = currentDepth
+--                    depthAmount[currentDepthID] = 1
+--                else
+--                    depthAmount[currentDepthID] = depthAmount[currentDepthID] + 1
+--                end
+--            end
+--            t2 = os.clock()
             --print("--- Ran test_invariant in "..(t2-t1).." ---")
         else
             tick = tick + 1
@@ -496,6 +520,7 @@ do
             screen.setColor(255, 255, 0)
             screen.drawText(w/4, 5, "Max depth: "..bvh.BVH_nodes[12][bvh.BVH_rootIndex])
             screen.drawText(w/4, 12, "Objects: "..(#bvh.BVH_nodes[12]+1)//2)
+            screen.drawText(w/4, 20, "debug: "..tostring(debug))
         end
     end
 end
