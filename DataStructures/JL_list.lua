@@ -22,7 +22,7 @@ function list(elements, removed_id, id)
     ---@section list_insert
     ---@param new_elements table new_elements[1] must not be nil, as it relies on #elements[1] to get length
     ---@return integer element_id returns the given id to new_elements
-    function elements.list_insert (new_elements)
+    function elements.list_insert(new_elements)
         id = #removed_id > 0 and table.remove(removed_id) or #elements[1]+1
         for i = 1, #elements do
             elements[i][id] = new_elements[i]

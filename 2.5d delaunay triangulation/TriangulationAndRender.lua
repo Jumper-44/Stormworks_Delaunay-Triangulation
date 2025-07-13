@@ -5,28 +5,10 @@
 --- Developed using LifeBoatAPI - Stormworks Lua plugin for VSCode - https://code.visualstudio.com/download (search "Stormworks Lua with LifeboatAPI" extension)
 
 
---[====[ EDITABLE SIMULATOR CONFIG - *automatically removed from the F7 build output ]====]
----@section __LB_SIMULATOR_ONLY__
-do
-    ---@type Simulator -- Set properties and screen sizes here - will run once when the script is loaded
-    simulator = simulator
-    simulator:setScreen(1, "3x3")
-
-    -- Runs every tick just before onTick; allows you to simulate the inputs changing
-    ---@param simulator Simulator Use simulator:<function>() to set inputs etc.
-    ---@param ticks     number Number of ticks since simulator started
-    function onLBSimulatorTick(simulator, ticks)
-    end;
-end
----@endsection
-
-
---[====[ IN-GAME CODE ]====]
-
 -- require https://github.com/Jumper-44/Stormworks_JumperLib
-require("JL_list") -- list{}, main point of this is to initialize and organize multiple tables in array and not hashmap part
-require("IKDTREE")
-require("BVH_SAH")
+require("DataStructures.JL_list") -- list{}, main point of this is to initialize and organize multiple tables in array and not hashmap part
+require("DataStructures.IKDTREE")
+require("DataStructures.BVH_SAH")
 
 
 ---@param str string
@@ -62,14 +44,13 @@ local v_x, v_y, v_z, v_near_dtriangle, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVis
     v1, v2, v3,
     nChild1, nChild2, nItem, nxMin, nyMin, nzMin, nxMax, nyMax, nzMax, x, y, z, w, X, Y, Z
 
-local SCREEN, HMD, pointBuffer, point_min_density_squared, max_triangle_size_squared, triangle_buffer_refreshrate, max_drawn_triangles, colors, b2num =
+local SCREEN, HMD, pointBuffer, point_min_density_squared, max_triangle_size_squared, triangle_buffer_refreshrate, max_drawn_triangles, colors =
     multiReadPropertyNumbers("SCREEN", {}),
     {256, 192, 128, 96, 128, 96}, -- {width, height, width/2, height/2, width/2, height/2}
     {0,0,0},
     property.getNumber("Min_D"), property.getNumber("Max_T"),
     property.getNumber("TBR"),   property.getNumber("MDT"),
-    {{flat = strToNumbers "WF", steep = strToNumbers "WS"}, {flat = strToNumbers "GF", steep = strToNumbers "GS"}}, -- colors = {color_water, color_ground}
-    {[false] = 0, [true] = 1} -- b2num
+    {{flat = strToNumbers "WF", steep = strToNumbers "WS"}, {flat = strToNumbers "GF", steep = strToNumbers "GS"}} -- colors = {color_water, color_ground}
 
 --local SCREEN = {
 --  [1]  w              -- Pixel width of screen

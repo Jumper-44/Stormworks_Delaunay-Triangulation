@@ -2,7 +2,7 @@
 -- GitHub: https://github.com/Jumper-44
 -- MIT License at end of this file
 
-require('JL_list')
+require("DataStructures.JL_list")
 ---kd-tree with focus on using integer ID for references rather than tables, but tables are still used in leaf nodes.  
 ---Requires 'JumperLib.DataStructures.JL_list'  
 ---@section IKDTree 1 _IKDTREE_

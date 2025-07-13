@@ -25,7 +25,7 @@ end
 --]]
 
 
-require("JL_list")
+require("DataStructures.JL_list")
 
 ---@section BVH_AABB 1 _BVH_AABB_
 ---@class BoundingVolumeHierarchyAABB
