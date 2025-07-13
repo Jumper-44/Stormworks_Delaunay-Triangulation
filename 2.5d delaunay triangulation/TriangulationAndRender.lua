@@ -127,7 +127,7 @@ function initialize()
     frustumPlanes = {fPlaneRight, fPlaneLeft, fPlaneBottom, fPlaneTop, fPlaneBack, fPlaneFront}
 
     vertices = list{v_x, v_y, v_z, v_near_dtriangle, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVisible, v_frame}
-    vertices_kdtree = IKDTree(v_x, v_y, v_z)
+    vertices_kdtree = {v_x, v_y, v_z} IKDTree(vertices_kdtree, 3)
     vertices_buffer = {0,0,0, 1, 0,0,0, false,false,0}
 
     triangles = list{t_v1, t_v2, t_v3, t_colorR, t_colorG, t_colorB, t_centroidDepth}
