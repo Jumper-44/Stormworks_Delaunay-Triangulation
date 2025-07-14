@@ -40,9 +40,10 @@ require("DataStructures.JL_list")
 ---For own search implementation use the tables 'BVH_nodes' and 'BVH_rootIndex'  
 ---Reference for implementation of insertion SAH https://box2d.org/files/ErinCatto_DynamicBVH_Full.pdf
 ---@return BoundingVolumeHierarchyAABB
-BVH_AABB = function()
-    local AABB_min_buffer, AABB_max_buffer, AABB_minX, AABB_minY, AABB_minZ, AABB_maxX, AABB_maxY, AABB_maxZ, node_child1, node_child2, node_parent, node_item, node_surfaceArea, node_maxDepth, node_buffer =
-        {0,0,0}, {0,0,0},       -- AABB_min_buffer, AABB_max_buffer
+---@overload fun(): BoundingVolumeHierarchyAABB
+BVH_AABB = function(temp1, temp2, temp3, temp4, i1, i2, index, newNode, newNode_SA, unionNodeAABB, updateNodeAABB, surfaceAreaAABB, best_sibling, best_cost, inherited_cost)
+    local minBuffer1, maxBuffer1, minBuffer2, maxBuffer2, minBuffer3, maxBuffer3, AABB_minX, AABB_minY, AABB_minZ, AABB_maxX, AABB_maxY, AABB_maxZ, node_child1, node_child2, node_parent, node_item, node_surfaceArea, node_maxDepth, node_buffer =
+        {}, {}, {}, {}, {}, {}, -- minBuffer1, maxBuffer1, minBuffer2, maxBuffer2, minBuffer3, maxBuffer3
         {}, {}, {}, {}, {}, {}, -- AABB_minX, AABB_minY, AABB_minZ, AABB_maxX, AABB_maxY, AABB_maxZ
         {}, {}, {}, {}, {}, {}, -- node_child1, node_child2, node_parent, node_item, node_surfaceArea, node_maxDepth
         {false, false, false, false, 0,0,0, 0,0,0, 0,1}
@@ -52,21 +53,22 @@ BVH_AABB = function()
         list{node_child1, node_child2, node_parent, node_item,  AABB_minX, AABB_minY, AABB_minZ, AABB_maxX, AABB_maxY, AABB_maxZ, node_surfaceArea, node_maxDepth},
         {AABB_minX, AABB_minY, AABB_minZ}, {AABB_maxX, AABB_maxY, AABB_maxZ}
 
-    local temp1, temp2, temp3, temp4, index, newNode, newNode_SA, unionNodeAABB, updateNodeAABB, surfaceAreaAABB, best_sibling, best_cost, inherited_cost
-
     BVH.BVH_rootIndex = false
     BVH.BVH_nodes = nodes
 
     ---@param nodeA integer
     ---@param nodeB integer
+    ---@param minBuffer table
+    ---@param maxBuffer table
     ---@param min   any local variable
     ---@param max   any local variable
-    function unionNodeAABB(nodeA, nodeB, min, max)
+    ---@overload fun(nodeA: integer, nodeB: integer, minBuffer: table, maxBuffer: table)
+    function unionNodeAABB(nodeA, nodeB, minBuffer, maxBuffer, min, max)
         for i = 1, 3 do
             min = AABB_min[i]
             max = AABB_max[i]
-            AABB_min_buffer[i] = math.min(min[nodeA], min[nodeB])
-            AABB_max_buffer[i] = math.max(max[nodeA], max[nodeB])
+            minBuffer[i] = min[nodeA] < min[nodeB] and min[nodeA] or min[nodeB]
+            maxBuffer[i] = max[nodeA] < max[nodeB] and max[nodeB] or max[nodeA]
         end
     end
 
@@ -96,18 +98,15 @@ BVH_AABB = function()
     ---@section BVH_refitAABBs
     ---Walk up the tree refitting AABBs and set node surface area
     ---@param node integer|false
-    ---@param i1 any local variable
-    ---@param i2 any local variable
-    ---@param sameSA any local variable
-    ---@param prevMaxDepth any local variable
-    BVH.BVH_refitAABBs = function(node, i1, i2, sameSA, prevMaxDepth)
+    ---@param sameSA boolean|nil
+    BVH.BVH_refitAABBs = function(node, sameSA)
 --#if without tree rotation
 --        while node do
---            unionNodeAABB(node_child1[node], node_child2[node])
---            updateNodeAABB(node, AABB_min_buffer, AABB_max_buffer)
---            temp1 = node_surfaceArea[node]                            -- SAH before update
---            temp2 = surfaceAreaAABB(AABB_min_buffer, AABB_max_buffer) -- SAH after update
---            if temp1 == temp2 then break end                          -- Early termination if SAH remains the same
+--            unionNodeAABB(node_child1[node], node_child2[node], minBuffer1, maxBuffer1)
+--            updateNodeAABB(node, minBuffer1, maxBuffer1)
+--            temp1 = node_surfaceArea[node]                  -- SAH before update
+--            temp2 = surfaceAreaAABB(minBuffer1, maxBuffer1) -- SAH after update
+--            if temp1 == temp2 then break end                -- Early termination if SAH remains the same
 --
 --            node_surfaceArea[node] = temp2
 --            node = node_parent[node]
@@ -115,9 +114,14 @@ BVH_AABB = function()
 --
 --#elseif with tree rotation, no node depth penalty, no early termination
 --        while node do
---            unionNodeAABB(node_child1[node], node_child2[node])
---            updateNodeAABB(node, AABB_min_buffer, AABB_max_buffer)
---            node_surfaceArea[node] = surfaceAreaAABB(AABB_min_buffer, AABB_max_buffer)
+--            if not sameSA then
+--                unionNodeAABB(node_child1[node], node_child2[node], minBuffer1, maxBuffer1)
+--                updateNodeAABB(node, minBuffer1, maxBuffer1)
+--                temp1 = node_surfaceArea[node]
+--                temp2 = surfaceAreaAABB(minBuffer1, maxBuffer1)
+--                node_surfaceArea[node] = temp2
+--                sameSA = temp1 == temp2
+--            end
 --
 --            -- Try tree rotation [Reference: Page 111-127], specifically [Reference: Page 115], where F in ref. is 'node'
 --            temp1 = node_parent[node]
@@ -130,14 +134,20 @@ BVH_AABB = function()
 --                    i2 = node_child1[temp2] == temp1 and 2 or 1
 --                    temp4 = nodes[i2][temp2] -- 'node'.parent sibling
 --
---                    unionNodeAABB(node, temp3)
---                    best_cost = surfaceAreaAABB(AABB_min_buffer, AABB_max_buffer)
---                    unionNodeAABB(temp3, temp4)
---                    if surfaceAreaAABB(AABB_min_buffer, AABB_max_buffer) < best_cost then
+--                    if sameSA then
+--                        best_cost = node_surfaceArea[temp1]
+--                    else
+--                        unionNodeAABB(node, temp3, minBuffer1, maxBuffer1)
+--                        best_cost = surfaceAreaAABB(minBuffer1, maxBuffer1)
+--                    end
+--
+--                    unionNodeAABB(temp3, temp4, minBuffer1, maxBuffer1)
+--                    if surfaceAreaAABB(minBuffer1, maxBuffer1) < best_cost then
 --                       node_parent[temp4] = temp1
 --                       node_parent[node]  = temp2
 --                       nodes[i1%2+1][temp1] = temp4
 --                       nodes[i2][temp2] = node
+--                       sameSA = false
 --                    end
 --                end
 --            end
@@ -146,48 +156,53 @@ BVH_AABB = function()
 --        end
 --
 --#elseif with tree rotation and depth penalty to balance tree more, with early termination
-        sameSA = false
         while node do
             i1 = node_child1[node]
             i2 = node_child2[node]
-            prevMaxDepth = node_maxDepth[node]
+            temp1 = node_maxDepth[node]
             node_maxDepth[node] = math.max(node_maxDepth[i1], node_maxDepth[i2]) + 1
 
+            if sameSA and temp1 == node_maxDepth[node] then
+                break
+            end
+
             temp1 = node_parent[node] -- 'node'.parent
+            if not sameSA then
+                unionNodeAABB(i1, i2, minBuffer1, maxBuffer1)
+                updateNodeAABB(node, minBuffer1, maxBuffer1)
 
-            if sameSA then
-                if prevMaxDepth == node_maxDepth[node] then
-                    break
-                end
-            else
-                unionNodeAABB(i1, i2)
-                updateNodeAABB(node, AABB_min_buffer, AABB_max_buffer)
-
-                temp2 = node_surfaceArea[node]                            -- SA before update
-                temp3 = surfaceAreaAABB(AABB_min_buffer, AABB_max_buffer) -- SA after update
+                temp2 = node_surfaceArea[node]                  -- SA before update
+                temp3 = surfaceAreaAABB(minBuffer1, maxBuffer1) -- SA after update
                 sameSA = temp2 == temp3
                 node_surfaceArea[node] = temp3
+            end
 
-                -- Try tree rotation [Reference: Page 111-127], specifically [Reference: Page 115], where F in ref. is 'node'
-                if not sameSA and temp1 then -- not root
-                    temp2 = node_parent[temp1] -- 'node'.parent.parent
-                    if temp2 then -- not root
-                        i1 = node_child1[temp1] == node and 2 or 1
-                        temp3 = nodes[i1][temp1] -- 'node' sibling
+            -- Try tree rotation [Reference: Page 111-127], specifically [Reference: Page 115], where F in ref. is 'node'
+            if temp1 then -- not root
+                temp2 = node_parent[temp1] -- 'node'.parent.parent
+                if temp2 then -- not root
+                    i1 = node_child1[temp1] == node and 2 or 1
+                    temp3 = nodes[i1][temp1] -- 'node' sibling
 
-                        i2 = node_child1[temp2] == temp1 and 2 or 1
-                        temp4 = nodes[i2][temp2] -- 'node'.parent sibling
+                    i2 = node_child1[temp2] == temp1 and 2 or 1
+                    temp4 = nodes[i2][temp2] -- 'node'.parent sibling
 
-                        unionNodeAABB(temp3, temp4)
-                        best_sibling = surfaceAreaAABB(AABB_min_buffer, AABB_max_buffer)
-                        unionNodeAABB(node, temp3)
-                        best_cost = surfaceAreaAABB(AABB_min_buffer, AABB_max_buffer)
-                        if best_sibling / best_cost < 1 + node_maxDepth[node] - node_maxDepth[temp4] then -- SAH with depth penalty
-                            node_parent[temp4] = temp1
-                            node_parent[node]  = temp2
-                            nodes[i1%2+1][temp1] = temp4
-                            nodes[i2][temp2] = node
-                        end
+                    unionNodeAABB(temp3, temp4, minBuffer1, maxBuffer1)
+                    best_sibling = surfaceAreaAABB(minBuffer1, maxBuffer1)
+
+                    if sameSA then
+                        best_cost = node_surfaceArea[temp1]
+                    else
+                        unionNodeAABB(node, temp3, minBuffer1, maxBuffer1)
+                        best_cost = surfaceAreaAABB(minBuffer1, maxBuffer1)
+                    end
+
+                    if best_sibling / best_cost < 1 + node_maxDepth[node] - node_maxDepth[temp4] then -- SAH with depth penalty
+                        node_parent[temp4] = temp1
+                        node_parent[node]  = temp2
+                        nodes[i1%2+1][temp1] = temp4
+                        nodes[i2][temp2] = node
+                        sameSA = false
                     end
                 end
             end
@@ -214,25 +229,50 @@ BVH_AABB = function()
         index = BVH.BVH_rootIndex
         if index then
             best_sibling = index
-            unionNodeAABB(index, newNode)
-            best_cost = surfaceAreaAABB(AABB_min_buffer, AABB_max_buffer)
+            unionNodeAABB(index, newNode, minBuffer3, maxBuffer3)
+            best_cost = surfaceAreaAABB(minBuffer3, maxBuffer3)
             inherited_cost = best_cost - node_surfaceArea[index]
 
+            temp4 = best_cost
             -- Find best sibling that adds least surface area to tree. [Reference: Page 77-88]
             while (node_item[index] == false) and (newNode_SA + inherited_cost < best_cost) do -- Is node not a leaf and is lowerbound cost of child nodes less than best_cost. [Reference: Page 86-87]
-                for i = 1, 2 do
-                    temp4 = nodes[i][index] -- child1|2 index
-                    unionNodeAABB(temp4, newNode)
-                    temp1 = surfaceAreaAABB(AABB_min_buffer, AABB_max_buffer) + inherited_cost -- new_cost
+                i1 = node_child1[index]
+                i2 = node_child2[index]
+                unionNodeAABB(i1, newNode, minBuffer1, maxBuffer1)
+                unionNodeAABB(i2, newNode, minBuffer2, maxBuffer2)
+                temp1 = surfaceAreaAABB(minBuffer1, maxBuffer1)
+                temp2 = surfaceAreaAABB(minBuffer2, maxBuffer2)
 
-                    if temp1 < best_cost then -- is new_cost better/less than best_cost
-                        best_cost = temp1
-                        best_sibling = temp4
-                        inherited_cost = temp1 - node_surfaceArea[temp4]
-                    end
+                temp3 = temp1 + inherited_cost
+                if temp3 < best_cost then
+                    best_cost = temp3
+                    best_sibling = i1
                 end
 
-                if index == best_sibling then break end -- The children was not better cost than parent
+                temp3 = temp2 + inherited_cost
+                if temp3 < best_cost then
+                    best_cost = temp3
+                    best_sibling = i2
+                elseif index == best_sibling then -- the children was not better cost than parent
+                    break
+                end
+
+                if node_surfaceArea[index] ~= temp4 then -- refit AABB if SA changes and index is not a sibling to new node
+                    node_surfaceArea[index] = temp4
+                    updateNodeAABB(index, minBuffer3, maxBuffer3)
+                end
+
+                if best_sibling == i1 then
+                    temp4 = temp1
+                    minBuffer3, minBuffer1 = minBuffer1, minBuffer3
+                    maxBuffer3, maxBuffer1 = maxBuffer1, maxBuffer3
+                else
+                    temp4 = temp2
+                    minBuffer3, minBuffer2 = minBuffer2, minBuffer3
+                    maxBuffer3, maxBuffer2 = maxBuffer2, maxBuffer3
+                end
+
+                inherited_cost = best_cost - node_surfaceArea[best_sibling]
                 index = best_sibling
             end
 
@@ -328,7 +368,7 @@ end
 --[[ DEBUG. Inserting and deleting from BVH, as well as rendering tree nodes illustration.
 do
     local n = 10000 -- Amount of AABB/objects to insert
-    local objectsPerInsertion = 200
+    local objectsPerInsertion = n
     local treeDrawWidthScale = 20
     debug = 0
 
@@ -350,54 +390,60 @@ do
         return (math.random() - 0.5) * (scale or 1)
     end
 
-    local temp = 0
-    AABB_buffer[3] = 0
-    AABB_buffer[6] = 0
-    for i = 1, math.ceil(n^0.5) do
-        for j = 1, math.ceil(n^0.5) do
-            temp = rand(50000)
-            AABB_buffer[1] = temp - 4 + rand(50)
-            AABB_buffer[2] = temp - 4 + rand(50)
-            AABB_buffer[4] = temp + 4 + rand(50)
-            AABB_buffer[5] = temp + 4 + rand(50)
-            AABB.list_insert(AABB_buffer)
+local temp = 0
+
+--- Invalid AABB bounds insertion
+--    AABB_buffer[3] = 0
+--    AABB_buffer[6] = 0
+--    local n_05 = math.ceil(n^0.5)
+--    for i = 1, n_05 do
+--        for j = 1, n_05 do
+--            temp = rand(50000)
+--            AABB_buffer[1] = temp - 4 + rand(50)
+--            AABB_buffer[2] = temp - 4 + rand(50)
+--            AABB_buffer[4] = temp + 4 + rand(50)
+--            AABB_buffer[5] = temp + 4 + rand(50)
+--            AABB.list_insert(AABB_buffer)
+--        end
+--    end
+
+    for i = 1, n do
+        for j = 1, 3 do
+            temp = rand(10000)
+            AABB_buffer[j]   = temp - 100 + rand(50)
+            AABB_buffer[j+3] = temp + 100 + rand(50)
         end
+        AABB.list_insert(AABB_buffer)
     end
 
---    for i = 1, n do
---        for j = 1, 3 do
---            temp = rand(10000)
---            AABB_buffer[j]   = temp - 50 + rand(50)
---            AABB_buffer[j+3] = temp + 50 + rand(50)
---        end
---        AABB.list_insert(AABB_buffer)
---    end
+--[===[
+    local t1 = os.clock()
+    for i = 1, n do
+        fetchAABB(i)
+        BVH_ID[i] = bvh.BVH_insert(i, AABB_min_buffer, AABB_max_buffer)
+    end
+    local t2 = os.clock()
+    print("init time1: "..(t2-t1))
+    print(bvh.BVH_treeCost())
 
---
---    local t1 = os.clock()
---    for i = 1, n do
---        fetchAABB(i)
---        BVH_ID[i] = bvh.BVH_insert(i, AABB_min_buffer, AABB_max_buffer)
---    end
---    local t2 = os.clock()
---    print("init time1: "..(t2-t1))
---    print(bvh.BVH_treeCost())
---
---    for i = 1, n do
---        bvh.BVH_remove(BVH_ID[i])
---    end
---
---    t1 = os.clock()
---    for i = 1, n do
---        fetchAABB(i)
---        BVH_ID[i] = bvh.BVH_insert(i, AABB_min_buffer, AABB_max_buffer)
---    end
---    t2 = os.clock()
---
---    print("init time2: "..(t2-t1))
---    print(bvh.BVH_treeCost()) -- expected to be the same as earlier BVH.treeCost print
+    t1 = os.clock()
+    for i = 1, n do
+        bvh.BVH_remove(BVH_ID[i])
+    end
+    t2 = os.clock()
+    print("Rem time2: "..(t2-t1))
 
+    t1 = os.clock()
+    for i = 1, n do
+        fetchAABB(i)
+        BVH_ID[i] = bvh.BVH_insert(i, AABB_min_buffer, AABB_max_buffer)
+    end
+    t2 = os.clock()
 
+    print("init time2: "..(t2-t1))
+    print(bvh.BVH_treeCost()) -- expected to be the same as earlier BVH.treeCost print
+--]===]
+-- [===[
     ---
     --- Ensure that child nodes AABB reside in parent AABB (invariant)
     --- Calculate all leaf nodes depth in tree
@@ -422,11 +468,15 @@ do
                 end
             else
                 if count < n then
-                    for i = 1, math.min(n - count, objectsPerInsertion) do
+                    local maxC = math.min(n - count, objectsPerInsertion)
+                    local t1 = os.clock()
+                    for i = 1, maxC do
                         count = count + 1
                         fetchAABB(count)
                         BVH_ID[count] = bvh.BVH_insert(count, AABB_min_buffer, AABB_max_buffer)
                     end
+                    local t2 = os.clock()
+                    print("Obj. Inserted: "..maxC..", time: "..(t2-t1))
                 elseif count == n then
                     reverse = true
                     tick = -120
@@ -523,6 +573,7 @@ do
             screen.drawText(w/4, 20, "debug: "..tostring(debug))
         end
     end
+    --]===]
 end
 --]]
 ---@endsection
