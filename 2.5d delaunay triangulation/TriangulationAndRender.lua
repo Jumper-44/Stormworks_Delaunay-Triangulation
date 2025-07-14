@@ -174,6 +174,13 @@ function initialize()
 
         repeat ---@cast check_queue table
             n = check_queue[check_queue_ptr]
+
+            if nItem[n] then -- since currently leaf node only contain 1 triangle, then just allow
+                triangleDrawBufferSize = triangleDrawBufferSize + 1
+                triangleDrawBuffer[triangleDrawBufferSize] = nItem[n]
+                goto continue
+            end
+
             x = nxMin[n]
             y = nyMin[n]
             z = nzMin[n]
@@ -200,20 +207,20 @@ function initialize()
                     (px + pY + pZ < i) and
                     (pX + pY + pZ < i)
                 then
-                    goto reject
+                    goto continue
                 end
             end
 
-            if nItem[n] then
-                triangleDrawBufferSize = triangleDrawBufferSize + 1
-                triangleDrawBuffer[triangleDrawBufferSize] = nItem[n]
-            else
-                check_queue_size = check_queue_size + 2
-                check_queue[check_queue_size-1] = nChild1[n]
-                check_queue[check_queue_size]   = nChild2[n]
-            end
+            --if nItem[n] then
+            --    triangleDrawBufferSize = triangleDrawBufferSize + 1
+            --    triangleDrawBuffer[triangleDrawBufferSize] = nItem[n]
+            --else
+            check_queue_size = check_queue_size + 2
+            check_queue[check_queue_size-1] = nChild1[n]
+            check_queue[check_queue_size]   = nChild2[n]
+            --end
 
-            ::reject::
+            ::continue::
             check_queue_ptr = check_queue_ptr + 1
         until check_queue_ptr > check_queue_size
     end
@@ -450,7 +457,7 @@ WorldToScreen_triangles = function()
         if -- (Most average cases) determining if triangle is visible / should be rendered
             v_inNearAndFar[v1] and v_inNearAndFar[v2] and v_inNearAndFar[v3]                                                                -- Are all vertices within near and far plane
             and (v_isVisible[v1] or v_isVisible[v2] or v_isVisible[v3])                                                                     -- and atleast 1 visible in frustum
---            and (v_sx[v1]*v_sy[v2] - v_sx[v2]*v_sy[v1] + v_sx[v2]*v_sy[v3] - v_sx[v3]*v_sy[v2] + v_sx[v3]*v_sy[v1] - v_sx[v1]*v_sy[v3] > 0) -- and is the triangle facing the camera (backface culling CCW. Flip '>' for CW. Can be removed if triangles aren't consistently ordered CCW/CW)
+            and (v_sx[v1]*v_sy[v2] - v_sx[v2]*v_sy[v1] + v_sx[v2]*v_sy[v3] - v_sx[v3]*v_sy[v2] + v_sx[v3]*v_sy[v1] - v_sx[v1]*v_sy[v3] > 0) -- and is the triangle facing the camera (backface culling CCW. Flip '>' for CW. Can be removed if triangles aren't consistently ordered CCW/CW)
         then
             t_centroidDepth[currentTriangle] = v_sz[v1] + v_sz[v2] + v_sz[v3] -- centroid depth for sort
             i = i + 1
@@ -549,7 +556,7 @@ end
 
 function onDraw()
     if renderOn then
-        local drawTri = drawWireframe and screen.drawTriangle or screen.drawTriangleF
+        local prevColorHash, drawTri = 0, drawWireframe and screen.drawTriangle or screen.drawTriangleF
 
         WorldToScreen_triangles()
         for i = 1, triangleDrawBufferSize do
@@ -558,7 +565,12 @@ function onDraw()
             v2 = t_v2[i]
             v3 = t_v3[i]
 
-            screen.setColor(t_colorR[i], t_colorG[i], t_colorB[i])
+            colorHash = t_colorR[i]//10 << 16  |  t_colorG[i]//10 << 8  |  t_colorB[i]//16
+            if prevColorHash ~= colorHash then
+                prevColorHash = colorHash
+                screen.setColor(t_colorR[i], t_colorG[i], t_colorB[i]) -- setColor is roughly as expensive to call as drawTriangle
+            end
+
             drawTri(v_sx[v1], v_sy[v1], v_sx[v2], v_sy[v2], v_sx[v3], v_sy[v3])
         end
         screen.setColor(0, 0, 0, color_alpha)
@@ -567,7 +579,7 @@ function onDraw()
 
     screen.setColor(0, 255, 0)
     screen.drawText(5,5, ("DT/T/View: %i/%i/%i"):format(#dt_v1, #t_v1, #triangleDrawBuffer))
-    screen.drawText(5, 12, tostring(debug))
+    screen.drawText(5, 12, "Cull: "..tostring(debug))
     --screen.drawText(5, 13, ("Pos: %+0.6f / %+0.6f / %+0.6f"):format(cameraPos[1] or 0, cameraPos[2] or 0, cameraPos[3] or 0)) -- debug
 
     frameTick = frameTick + 1
