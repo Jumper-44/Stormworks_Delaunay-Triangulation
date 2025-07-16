@@ -26,6 +26,7 @@ end
 
 
 require("DataStructures.JL_list")
+require("newTables")
 
 ---@section BVH_AABB 1 _BVH_AABB_
 ---@class BoundingVolumeHierarchyAABB
@@ -42,11 +43,8 @@ require("DataStructures.JL_list")
 ---@return BoundingVolumeHierarchyAABB
 ---@overload fun(): BoundingVolumeHierarchyAABB
 BVH_AABB = function(temp1, temp2, temp3, temp4, i1, i2, index, newNode, newNode_SA, unionNodeAABB, updateNodeAABB, surfaceAreaAABB, best_sibling, best_cost, inherited_cost)
-    local minBuffer1, maxBuffer1, minBuffer2, maxBuffer2, minBuffer3, maxBuffer3, AABB_minX, AABB_minY, AABB_minZ, AABB_maxX, AABB_maxY, AABB_maxZ, node_child1, node_child2, node_parent, node_item, node_surfaceArea, node_maxDepth, node_buffer =
-        {}, {}, {}, {}, {}, {}, -- minBuffer1, maxBuffer1, minBuffer2, maxBuffer2, minBuffer3, maxBuffer3
-        {}, {}, {}, {}, {}, {}, -- AABB_minX, AABB_minY, AABB_minZ, AABB_maxX, AABB_maxY, AABB_maxZ
-        {}, {}, {}, {}, {}, {}, -- node_child1, node_child2, node_parent, node_item, node_surfaceArea, node_maxDepth
-        {false, false, false, false, 0,0,0, 0,0,0, 0,1}
+    local node_buffer, minBuffer1, maxBuffer1, minBuffer2, maxBuffer2, minBuffer3, maxBuffer3, AABB_minX, AABB_minY, AABB_minZ, AABB_maxX, AABB_maxY, AABB_maxZ, node_child1, node_child2, node_parent, node_item, node_surfaceArea, node_maxDepth =
+        {false, false, false, false, 0,0,0, 0,0,0, 0,1}, newTables{18}
 
     local BVH, nodes, AABB_min, AABB_max =
         {},

@@ -9,6 +9,7 @@
 require("DataStructures.JL_list") -- list{}, main point of this is to initialize and organize multiple tables in array and not hashmap part
 require("DataStructures.IKDTREE")
 require("DataStructures.BVH_SAH")
+require("newTables") -- helper function that returns *n* new tables by 'newTables{n}' -> '{}, {}, ...n'
 
 
 ---@param str string
@@ -103,13 +104,6 @@ function add_dtriangle(v1, v2, v3, adx, ady, bdx, bdy, ccw) -- checking sign of 
     return dtriangles.list_insert(dtriangles_buffer)
 end
 
---function new_tables(n, ...)
---    if n>0 then
---        return new_tables(n-1, {}, ...)
---    end
---    return ...
---end
-
 ---initialize or reset state
 function initialize()
     v_x, v_y, v_z, v_near_dtriangle, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVisible, v_frame,
@@ -118,11 +112,7 @@ function initialize()
     dtriangle_check_queue, invalid_dtriangles, edge_boundary_neighbor, edge_boundary_v1, edge_boundary_v2, edge_shared,
     fPlaneRight, fPlaneLeft, fPlaneBottom, fPlaneTop, fPlaneBack, fPlaneFront,
     minAABB_buffer, maxAABB_buffer, check_queue,
-    cameraTransform, triangleDrawBuffer
-      = (function(t)                        -- "inlined" new_tables function by making a direct 
-            for i = 1, 43 do t[i] = {} end  -- call to an anonymous function in which
-            return table.unpack(t)          -- parameter t = {} and returns 43 new tables
-        end){}
+    cameraTransform, triangleDrawBuffer = newTables{43}
 
     frustumPlanes = {fPlaneRight, fPlaneLeft, fPlaneBottom, fPlaneTop, fPlaneBack, fPlaneFront}
 
