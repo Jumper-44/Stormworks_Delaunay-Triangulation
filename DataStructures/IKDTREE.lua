@@ -56,7 +56,10 @@ IKDTree = function(IKD_Tree, k_dimensions, nodes, pointBuffer, points, sortFunct
                     newNodeBuffer[4] = {}
                     nRight[nodeID] = nodes.list_insert(newNodeBuffer)
 
-                    table.move(points, 9, 16, 1, newNodeBuffer[4])
+                    for i = 9, 16 do
+                        newNodeBuffer[4][i - 8] = points[i]
+                        points[i] = nil
+                    end
                 end
             else -- is internal node and therefore search further down the tree
                 nodeID = IKD_Tree[cd][pointID] < nSplit[nodeID] and nLeft[nodeID] or nRight[nodeID]
