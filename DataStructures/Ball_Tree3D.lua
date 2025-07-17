@@ -119,6 +119,9 @@ BallTree3D = function(px, py, pz)
             end
 
             x = nParent[n]
+
+            -- tree rotations reference: [https://box2d.org/files/ErinCatto_DynamicBVH_Full.pdf, page 111-126],
+            -- but instead of surface area then minimize radius and depth
             -- [[ local rotation to minimize radius and tree depth
             if x then
                 y = nParent[x]
@@ -129,6 +132,7 @@ BallTree3D = function(px, py, pz)
                     i2 = nChild1[y] == x and 2 or 1
                     i3 = nodes[i2][y] -- 'n'.parent sibling
 
+                    -- heuristic:
                     -- new_r / old_r  +  old_depth / new_depth * depth_factor < 1 + depth_factor
                     if unionSphere(i3, z, buffer1) / (sameR and nr[n] or unionSphere(n, z)) + nDepth[i3] / nDepth[n] * 0.5 < 1.5 then
                         nParent[i3] = x
@@ -441,7 +445,7 @@ local rand = function(scale)
     return (math.random() - 0) * (scale or 1)
 end
 
---[=[
+-- [=[
 do
     for i = 1, num do -- init dataset
         pbuffer[1] = rand(width)
