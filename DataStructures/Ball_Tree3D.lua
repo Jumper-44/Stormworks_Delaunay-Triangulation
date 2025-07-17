@@ -54,7 +54,7 @@ require("newTables")
 ---@return BallTree3D
 BallTree3D = function(px, py, pz)
     local bt, nodesBuffer, buffer1, buffer2, nx, ny, nz, nr, nChild1, nChild2, nBucket, nParent, nDepth, nodes,
-        unionSphere, refitSpheres, bucketFurthestSearch, sortBucketFunc, nDist2, pDist2, -- functions
+        unionSphere, refitSpheres, bucketFurthestSearch, refitBucket, sortBucketFunc, nDist2, pDist2, -- functions
         x,y,z, dx,dy,dz, i1,i2,i3, size, dist, bucket, bestDist, bestP, n -- other locals, also acts as "globals" in some specific places, so really spaghetti code
         =
         {px, py, pz},
