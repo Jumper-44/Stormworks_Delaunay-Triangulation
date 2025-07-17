@@ -7,9 +7,8 @@
 
 -- require https://github.com/Jumper-44/Stormworks_JumperLib
 require("DataStructures.JL_list") -- list{}, main point of this is to initialize and organize multiple tables in array and not hashmap part
-require("DataStructures.IKDTREE")
-require("DataStructures.BVH_SAH")
 require("newTables") -- helper function that returns *n* new tables by 'newTables{n}' -> '{}, {}, ...n'
+require("DataStructures.Ball_Tree3D")
 
 
 ---@param str string
@@ -34,16 +33,16 @@ end
 
 -- globally scoped locals
 local v_x, v_y, v_z, v_near_dtriangle, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVisible, v_frame,                          --v shorthand for vertex
-    t_v1, t_v2, t_v3, t_colorR, t_colorG, t_colorB, -- t_centroidDepth,                                                    --t shorthand for triangle
+    t_v1, t_v2, t_v3, t_colorR, t_colorG, t_colorB, t_cx, t_cy, t_cz, -- t_centroidDepth,                                                    --t shorthand for triangle
     dt_v1, dt_v2, dt_v3, dt_neighbor1, dt_neighbor2, dt_neighbor3, dt_isChecked, dt_isInvalid, dt_isSurface,            --dt shorthand for delaunay triangle
     dtriangle_check_queue, invalid_dtriangles, edge_boundary_neighbor, edge_boundary_v1, edge_boundary_v2, edge_shared,
-    vertices, vertices_kdtree, vertices_buffer, triangles, triangles_buffer, dtriangles, dtriangles_neighbors, dtriangles_buffer,
-    bvh, minAABB_buffer, maxAABB_buffer, check_queue, check_queue_ptr, check_queue_size,
+    vertices, vertices_balltree, vertices_buffer, triangles, triangles_buffer, dtriangles, dtriangles_neighbors, dtriangles_buffer,
+    traingle_balltree, check_queue, check_queue_ptr, check_queue_size,
     cameraTransform, triangleDrawBuffer,
     pointSub, add_vertex, add_dtriangle, -- functions
     px_cx, px_cy, px_cx_pos, px_cy_pos, frustumPlanes,
     v1, v2, v3,
-    nChild1, nChild2, nItem, nxMin, nyMin, nzMin, nxMax, nyMax, nzMax, x, y, z, w, X, Y, Z
+    nChild1, nChild2, nx, ny, nz, nr, nBucket, x, y, z, w, X, Y, Z
 
 local SCREEN, HMD, pointBuffer, point_min_density_squared, max_triangle_size_squared, triangle_buffer_refreshrate, max_drawn_triangles, colors =
     multiReadPropertyNumbers("SCREEN", {}),
@@ -76,7 +75,7 @@ function pointSub(a, b)
     return v_x[a]-v_x[b], v_z[a]-v_z[b]
 end
 
----Insert new point in kd-tree and list of vertices
+---Insert new point in ball-tree and list of vertices
 ---@param x number world x-coordinate
 ---@param y number world y-coordinate
 ---@param z number world z-coordinate
@@ -86,7 +85,7 @@ function add_vertex(x, y, z, pointID)
     vertices_buffer[2] = y
     vertices_buffer[3] = z
     pointID = vertices.list_insert(vertices_buffer)
-    vertices_kdtree.IKDTree_insert(pointID)
+    vertices_balltree.BT_insert(pointID)
     return pointID
 end
 
@@ -107,21 +106,21 @@ end
 ---initialize or reset state
 function initialize()
     v_x, v_y, v_z, v_near_dtriangle, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVisible, v_frame,
-    t_v1, t_v2, t_v3, t_colorR, t_colorG, t_colorB, -- t_centroidDepth,
+    t_v1, t_v2, t_v3, t_colorR, t_colorG, t_colorB, t_cx, t_cy, t_cz, -- t_centroidDepth,
     dt_v1, dt_v2, dt_v3, dt_neighbor1, dt_neighbor2, dt_neighbor3, dt_isChecked, dt_isInvalid, dt_isSurface,
     dtriangle_check_queue, invalid_dtriangles, edge_boundary_neighbor, edge_boundary_v1, edge_boundary_v2, edge_shared,
     fPlaneRight, fPlaneLeft, fPlaneBottom, fPlaneTop, fPlaneBack, fPlaneFront,
-    minAABB_buffer, maxAABB_buffer, check_queue,
+    check_queue,
     cameraTransform, triangleDrawBuffer = newTables{43}
 
     frustumPlanes = {fPlaneRight, fPlaneLeft, fPlaneBottom, fPlaneTop, fPlaneBack, fPlaneFront}
 
     vertices = list{v_x, v_y, v_z, v_near_dtriangle, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVisible, v_frame}
-    vertices_kdtree = {v_x, v_y, v_z} IKDTree(vertices_kdtree, 3)
+    vertices_balltree = BallTree3D(v_x, v_y, v_z)
     vertices_buffer = {0,0,0, 1, 0,0,0, false,false,0}
 
-    triangles = list{t_v1, t_v2, t_v3, t_colorR, t_colorG, t_colorB} -- ,t_centroidDepth}
-    triangles_buffer = {0,0,0,0,0,0,0}
+    triangles = list{t_v1, t_v2, t_v3, t_colorR, t_colorG, t_colorB, t_cx, t_cy, t_cz} -- ,t_centroidDepth}
+    triangles_buffer = {0,0,0, 0,0,0, 0,0,0} --,0}
 
     -- dt_v1-3        : <integer>       = delaunay triangle vertex 1-3
     -- dt_neighbor1-3 : <false|integer> = delaunay triangle neighbor ID connected by the edge opposite to this triangle vertex number (false if no neighbor)
@@ -142,77 +141,109 @@ function initialize()
     add_vertex(0,    0,  9E5)
     add_dtriangle(1, 2, 3)
 
-    bvh = BVH_AABB()
+    ---@cast t_cx table
+    ---@cast t_cy table
+    ---@cast t_cz table
+    traingle_balltree = BallTree3D(t_cx, t_cy, t_cz)
 
-    nChild1, nChild2, nParent, nItem, nxMin, nyMin, nzMin, nxMax, nyMax, nzMax = table.unpack(bvh.BVH_nodes)
+    nChild1, nChild2, nx, ny, nz, nr, nBucket = table.unpack(traingle_balltree.BT_nodes)
 
     ---@param n  any    local variable
-    ---@param px any    local variable
-    ---@param pX any    local variable
-    ---@param py any    local variable
-    ---@param pY any    local variable
-    ---@param pz any    local variable
-    ---@param pZ any    local variable
-    function frustumCullBVH(n, px, pX, py, pY, pz, pZ)
-        --inView_queue_ptr = 1
-        --inView_queue_size = 0
+    ---@param sx any    local variable
+    ---@param sy any    local variable
+    ---@param sz any    local variable
+    ---@param sr any    local variable
+    ---@param b  any    local variable
+    function frustumCull(n, sx, sy, sz, sr, b)
         triangleDrawBuffer = {}
         triangleDrawBufferSize = 0
         check_queue_ptr = 1
         check_queue_size = 1
-        check_queue[1] = bvh.BVH_rootIndex
+        check_queue[1] = traingle_balltree.BT_rootID
 
-        repeat ---@cast check_queue table
+        repeat
             n = check_queue[check_queue_ptr]
+            sx = nx[n]
+            sy = ny[n]
+            sz = nz[n]
+            sr = -nr[n]
 
-            if nItem[n] then -- since currently leaf node only contain 1 triangle, then just allow
-                triangleDrawBufferSize = triangleDrawBufferSize + 1
-                triangleDrawBuffer[triangleDrawBufferSize] = nItem[n]
-                goto continue
-            end
-
-            x = nxMin[n]
-            y = nyMin[n]
-            z = nzMin[n]
-            X = nxMax[n]
-            Y = nyMax[n]
-            Z = nzMax[n]
-
-            for i = 1, 6 do ---@cast i +table
-                i = frustumPlanes[i]
-                px = i[1]*x
-                pX = i[1]*X
-                py = i[2]*y
-                pY = i[2]*Y
-                pz = i[3]*z
-                pZ = i[3]*Z
-                i  = -i[4]
-
-                if  (px + py + pz < i) and
-                    (pX + py + pz < i) and
-                    (px + pY + pz < i) and
-                    (pX + pY + pz < i) and
-                    (px + py + pZ < i) and
-                    (pX + py + pZ < i) and
-                    (px + pY + pZ < i) and
-                    (pX + pY + pZ < i)
-                then
-                    goto continue
+            if not (
+               (sx*fPlaneRight[1]  + sy*fPlaneRight[2]  + sz*fPlaneRight[3]  + fPlaneRight[4]  < sr) or
+               (sx*fPlaneLeft[1]   + sy*fPlaneLeft[2]   + sz*fPlaneLeft[3]   + fPlaneLeft[4]   < sr) or
+               (sx*fPlaneBottom[1] + sy*fPlaneBottom[2] + sz*fPlaneBottom[3] + fPlaneBottom[4] < sr) or
+               (sx*fPlaneTop[1]    + sy*fPlaneTop[2]    + sz*fPlaneTop[3]    + fPlaneTop[4]    < sr) or
+               (sx*fPlaneBack[1]   + sy*fPlaneBack[2]   + sz*fPlaneBack[3]   + fPlaneBack[4]   < sr) or
+               (sx*fPlaneFront[1]  + sy*fPlaneFront[2]  + sz*fPlaneFront[3]  + fPlaneFront[4]  < sr))
+            then
+                b = nBucket[n]
+                if b then
+                    for i = 1, #b do
+                        triangleDrawBufferSize = triangleDrawBufferSize + 1
+                        triangleDrawBuffer[triangleDrawBufferSize] = b[i]
+                    end
+                else
+                    check_queue_size = check_queue_size + 2
+                    check_queue[check_queue_size-1] = nChild1[n]
+                    check_queue[check_queue_size]   = nChild2[n]
                 end
             end
 
-            --if nItem[n] then
-            --    triangleDrawBufferSize = triangleDrawBufferSize + 1
-            --    triangleDrawBuffer[triangleDrawBufferSize] = nItem[n]
-            --else
-            check_queue_size = check_queue_size + 2
-            check_queue[check_queue_size-1] = nChild1[n]
-            check_queue[check_queue_size]   = nChild2[n]
-            --end
-
-            ::continue::
             check_queue_ptr = check_queue_ptr + 1
         until check_queue_ptr > check_queue_size
+
+-- AABB culling
+--        repeat ---@cast check_queue table
+--            n = check_queue[check_queue_ptr]
+--
+--            if nItem[n] then -- since currently leaf node only contain 1 triangle, then just allow
+--                triangleDrawBufferSize = triangleDrawBufferSize + 1
+--                triangleDrawBuffer[triangleDrawBufferSize] = nItem[n]
+--                goto continue
+--            end
+--
+--            x = nxMin[n]
+--            y = nyMin[n]
+--            z = nzMin[n]
+--            X = nxMax[n]
+--            Y = nyMax[n]
+--            Z = nzMax[n]
+--
+--            for i = 1, 6 do ---@cast i +table
+--                i = frustumPlanes[i]
+--                px = i[1]*x
+--                pX = i[1]*X
+--                py = i[2]*y
+--                pY = i[2]*Y
+--                pz = i[3]*z
+--                pZ = i[3]*Z
+--                i  = -i[4]
+--
+--                if  (px + py + pz < i) and
+--                    (pX + py + pz < i) and
+--                    (px + pY + pz < i) and
+--                    (pX + pY + pz < i) and
+--                    (px + py + pZ < i) and
+--                    (pX + py + pZ < i) and
+--                    (px + pY + pZ < i) and
+--                    (pX + pY + pZ < i)
+--                then
+--                    goto continue
+--                end
+--            end
+--
+--            --if nItem[n] then
+--            --    triangleDrawBufferSize = triangleDrawBufferSize + 1
+--            --    triangleDrawBuffer[triangleDrawBufferSize] = nItem[n]
+--            --else
+--            check_queue_size = check_queue_size + 2
+--            check_queue[check_queue_size-1] = nChild1[n]
+--            check_queue[check_queue_size]   = nChild2[n]
+--            --end
+--
+--            ::continue::
+--            check_queue_ptr = check_queue_ptr + 1
+--        until check_queue_ptr > check_queue_size
     end
 end
 initialize()
@@ -320,8 +351,8 @@ function dt_insert_point(nearVertexID, point)
 
         if dt_isSurface[current_triangle] then
             i = dt_isSurface[current_triangle]
-            triangles.list_remove(nItem[i]) -- mark invalid triangles of final mesh for removal, i.e. getting overwritten when new are added
-            bvh.BVH_remove(i)
+            triangles.list_remove(i) -- mark invalid triangles of final mesh for removal, i.e. getting overwritten when new are added
+            traingle_balltree.BT_remove(i)
         end
 
         dtriangles.list_remove(current_triangle) -- mark invalid triangles for removal, i.e. getting overwritten when new are added
@@ -380,12 +411,13 @@ function dt_insert_point(nearVertexID, point)
                 triangles_buffer[j] = dtriangles[j][new_triangle]
                 triangles_buffer[j+3] = (c.flat[j]*t + c.steep[j]*inv_t) * t*t*0.7 + 0.3 -- rgb
 
-                i = vertices[j] -- note that lua overrides i each loop with correct iteration
-                minAABB_buffer[j] = math.min(i[v1], i[v2], i[v3])
-                maxAABB_buffer[j] = math.max(i[v1], i[v2], i[v3])
+                i = vertices[j]
+                triangles_buffer[j+6] = (i[v1] + i[v2] + i[v3])/3
             end
 
-            dt_isSurface[new_triangle] = bvh.BVH_insert(triangles.list_insert(triangles_buffer), minAABB_buffer, maxAABB_buffer)
+            t = triangles.list_insert(triangles_buffer)
+            traingle_balltree.BT_insert(t)
+            dt_isSurface[new_triangle] = t
         end
     end
 
@@ -403,8 +435,8 @@ WorldToScreen_triangles = function()
     local refreshCurrentFrame, currentTriangle, vertex_id, i
     refreshCurrentFrame = frameTick % triangle_buffer_refreshrate == 0
 
-    if refreshCurrentFrame and bvh.BVH_rootIndex then
-        frustumCullBVH()
+    if refreshCurrentFrame then
+        frustumCull()
         debug = #triangleDrawBuffer
     end
 
@@ -499,10 +531,10 @@ function onTick()
             end
 
             -- normalize planes
-            --magnitude = (frustumPlanes[i][1]^2 + frustumPlanes[i][2]^2 + frustumPlanes[i][3]^2)^0.5
-            --for j = 1, 4 do
-            --    frustumPlanes[i][j] = frustumPlanes[i][j] / magnitude
-            --end
+            magnitude = (frustumPlanes[i][1]^2 + frustumPlanes[i][2]^2 + frustumPlanes[i][3]^2)^0.5
+            for j = 1, 4 do
+                frustumPlanes[i][j] = frustumPlanes[i][j] / magnitude
+            end
         end
 
         -- solving for camera world position given 3 frustum planes (that isn't far or near plane), so linear system with 3 variables
@@ -534,7 +566,7 @@ function onTick()
         pointBuffer[3] = input.getNumber(i+2)
 
         if pointBuffer[1] ~= 0 and pointBuffer[2] ~= 0 then
-            nearVertexID, dist2 = vertices_kdtree.IKDTree_nearestNeighbor(pointBuffer)
+            dist2, nearVertexID = vertices_balltree.BT_nnSearch(pointBuffer[1], pointBuffer[2], pointBuffer[3])
 
             if dist2 > point_min_density_squared then
                 dt_insert_point(nearVertexID, pointBuffer)
@@ -570,6 +602,7 @@ function onDraw()
     screen.setColor(0, 255, 0)
     screen.drawText(5,5, ("DT/T/View: %i/%i/%i"):format(#dt_v1, #t_v1, #triangleDrawBuffer))
     screen.drawText(5, 12, "Cull: "..tostring(debug))
+    screen.drawText(5, 20, "MaxDepth: "..traingle_balltree.BT_nodes[9][traingle_balltree.BT_rootID])
     --screen.drawText(5, 13, ("Pos: %+0.6f / %+0.6f / %+0.6f"):format(cameraPos[1] or 0, cameraPos[2] or 0, cameraPos[3] or 0)) -- debug
 
     frameTick = frameTick + 1
