@@ -1,0 +1,523 @@
+-- MIT License at end of this file
+-- Author: Jumper
+-- GitHub: https://github.com/Jumper-44
+-- Workshop: https://steamcommunity.com/profiles/76561198084249280/myworkshopfiles/
+--- Developed using LifeBoatAPI - Stormworks Lua plugin for VSCode - https://code.visualstudio.com/download (search "Stormworks Lua with LifeboatAPI" extension)
+
+
+-- [[ DEBUG ONLY
+do
+    ---@type Simulator -- Set properties and screen sizes here - will run once when the script is loaded
+    simulator = simulator
+    simulator:setScreen(1, "10x10")
+
+    local _isTouched = false
+
+    -- Runs every tick just before onTick; allows you to simulate the inputs changing
+    ---@param simulator Simulator Use simulator:<function>() to set inputs etc.
+    ---@param ticks     number Number of ticks since simulator started
+    function onLBSimulatorTick(simulator, ticks)
+        local screenConnection = simulator:getTouchScreen(1)
+        if screenConnection.isTouched and screenConnection.isTouched ~= _isTouched then
+
+        end
+        _isTouched = screenConnection.isTouched
+        simulator:setInputBool(2, simulator:getIsToggled(1))
+    end
+end
+--]]
+
+--[====[ IN-GAME CODE ]====]
+
+require("DataStructures.JL_list")
+require("newTables")
+
+
+---@section BALL_TREE 1 _BALL_TREE_
+---@class BallTree3D
+---@field BT_nodes list
+---@field BT_rootID integer
+---@field BT_insert fun(id: integer): integer
+---@field BT_remove fun(id: integer)
+---@field BT_nnSearch fun(x: number, y: number, z: number): integer, number
+---@field BT_nnSearchApprox fun(x: number, y: number, z: number): integer, number
+---@field BT_treeCost fun(): number
+
+---https://en.wikipedia.org/wiki/Ball_tree
+---@param px table
+---@param py table
+---@param pz table
+---@return BallTree3D
+BallTree3D = function(px, py, pz)
+    local bt, nodesBuffer, buffer1, buffer2, nx, ny, nz, nr, nChild1, nChild2, nBucket, nParent, nDepth, nodes,
+        unionSphere, updateSphere, refitSpheres, bucketFurthestSearch, sortBucketFunc, -- functions
+        x,y,z, dx,dy,dz, i1,i2,i3, size, dist, bucket, bestDist, bestP, n -- other locals
+        =
+        {px, py, pz},
+        {false, false, 0,0,0,0, {}, false, 1},
+        newTables{11}
+
+    ---@cast nodesBuffer {[1]: number|false, [2]: number|false, [3]: number, [4]: number, [5]: number, [6]: number, [7]: table|false, [8]: number|false, [9]: number}
+
+    nodes = list{nChild1, nChild2, nx, ny, nz, nr, nBucket, nParent, nDepth}
+    nodes.list_insert(nodesBuffer)
+    bt.BT_nodes = nodes
+    bt.BT_rootID = 1
+
+
+    ---https://www.jasondavies.com/maps/circle-tree/  
+    ---@param sA integer
+    ---@param sB integer
+    ---@param buffer table {x, y, z, radius}
+    ---@overload fun(integer, integer, table)
+    unionSphere = function(sA, sB, buffer, dist, rA, rB, rC, xC, yC, zC)
+        if nr[sA] > nr[sB] then
+            sA, sB = sB, sA
+        end
+
+        dx = nx[sB] - nx[sA]
+        dy = ny[sB] - ny[sA]
+        dz = nz[sB] - nz[sA]
+        dist = (dx*dx + dy*dy + dz*dz)^0.5
+        rA = nr[sA]
+        rB = nr[sB]
+
+        if dist + rA <= rB then
+            xC = nx[sB]
+            yC = ny[sB]
+            zC = nz[sB]
+            rC = rB
+        else
+            rC = (rA + dist + rB) / 2
+
+            dist = (rC - rA)/dist
+            xC = dx*dist + nx[sA]
+            yC = dy*dist + ny[sA]
+            zC = dz*dist + nz[sA]
+        end
+
+        buffer[1] = xC
+        buffer[2] = yC
+        buffer[3] = zC
+        buffer[4] = rC
+    end
+
+    updateSphere = function(n, buffer)
+        nx[n] = buffer[1]
+        ny[n] = buffer[2]
+        nz[n] = buffer[3]
+        nr[n] = buffer[4]
+    end
+
+    refitSpheres = function(n, sameR, prevDepth)
+        while n do
+            i1 = nChild1[n]
+            i2 = nChild2[n]
+            prevDepth = nDepth[n]
+            nDepth[n] = math.max(nDepth[i1], nDepth[i2]) + 1
+
+            unionSphere(i1, i2, buffer1)
+            sameR = nr[n] == buffer1[4]
+            if sameR then
+                if prevDepth == nDepth[n] then
+                    break
+                end
+            else
+                updateSphere(n, buffer1)
+            end
+
+            n = nParent[n]
+        end
+    end
+
+    ---given a (x,y,z) then return furthest away point in bucket
+    ---@param bucket table
+    ---@param size integer
+    ---@param x number
+    ---@param y number
+    ---@param z number
+    ---@return integer, number
+    bucketFurthestSearch = function(bucket, size, x, y, z)
+        bestDist = 0
+        for i = 1, size do
+            i = bucket[i]
+            dx = px[i] - x
+            dy = py[i] - y
+            dz = pz[i] - z
+
+            size = dx*dx + dy*dy + dz*dz
+            if size > bestDist then
+                bestP = i
+                bestDist = size
+            end
+        end
+
+        ---@cast bestP integer
+        return bestP, bestDist
+    end
+
+    sortBucketFunc = function(p1, p2)
+        return buffer1[p1] < buffer1[p2]
+    end
+
+    ---@section BT_insert
+    ---comment
+    ---@param id integer
+    bt.BT_insert = function(id)
+        n = bt.BT_rootID
+        bucket = nBucket[n]
+        x = px[id]
+        y = py[id]
+        z = pz[id]
+
+        if bucket then
+            if #bucket == 0 then
+                nx[n] = x
+                ny[n] = y
+                nz[n] = z
+                nr[n] = 0
+            end
+        else
+            n = bt.BT_nnSearchApprox(x,y,z)
+        end
+
+        size = #bucket + 1
+        bucket[size] = id
+        if size == 16 then -- split bucket in two
+            i1 = bucketFurthestSearch(bucket, 15, x, y, z) -- we know xyz is 16th point in bucket
+            dx = px[i1]
+            dy = py[i1]
+            dz = pz[i1]
+            i2 = bucketFurthestSearch(bucket, 16, dx, dy, dz)
+
+            dx = dx - px[i2]
+            dy = dy - py[i2]
+            dz = dz - pz[i2]
+
+            for i = 1, 16 do
+                i = bucket[i]
+                buffer1[i] = dx*px[i] + dy*py[i] + dz*pz[i]
+            end
+
+            table.sort(bucket, sortBucketFunc)
+
+            for i = 1, 16 do -- table hash cleanup
+                buffer1[bucket[i]] = nil
+            end
+
+            nodesBuffer[7] = {}
+            for i = 9, 16 do
+                nodesBuffer[7][i - 8] = bucket[i]
+                bucket[i] = nil
+            end
+
+            i1 = nodes.list_insert(nodesBuffer) -- new sibling
+
+            nodesBuffer[7] = false
+            i2 = nodes.list_insert(nodesBuffer) -- new parent
+            i3 = nParent[n] -- old parent
+
+            nChild1[i2] = n
+            nChild2[i2] = i1
+            nParent[n] = i2
+            nParent[i1] = i2
+            if i3 then
+                nParent[i2] = i3
+                nodes[nChild1[i3] == n and 1 or 2][i3] = i2
+            else -- old parent was root
+                bt.BT_rootID = i2
+            end
+
+            -- update child nodes balls
+            for i = 1, 2 do
+                i = nodes[i][i2]
+                bucket = nBucket[i]
+                x = 0
+                y = 0
+                z = 0
+
+                for j = 1, 8 do
+                    j = bucket[j]
+                    x = x + px[j]
+                    y = y + py[j]
+                    z = z + pz[j]
+                end
+                x = x/8
+                y = y/8
+                z = z/8
+
+                nx[i] = x
+                ny[i] = y
+                nz[i] = z
+                _, dist = bucketFurthestSearch(bucket, 8, x,y,z)
+                nr[i] = dist^0.5
+            end
+
+            refitSpheres(i2)
+        else
+            -- expand radius of node to include new inserted point if needed
+            dx = x - nx[n]
+            dy = y - ny[n]
+            dz = z - nz[n]
+
+            dist = (dx*dx + dy*dy + dz*dz)^0.5
+            if nr[n] < dist then
+                nr[n] = dist
+                refitSpheres(nParent[n])
+            end
+        end
+    end
+    ---@endsection
+
+    ---@section BT_remove
+    ---@param id integer point id
+    bt.BT_remove = function(id)
+        bt.BT_nnSearch(px[id], py[id], pz[id])
+        n = i3
+        bucket = nBucket[n]
+        size = #bucket
+        if size == 1 then
+            i1 = nParent[n]
+            if i1 then
+                nodes.list_remove(n)
+                nodes.list_remove(i1)
+                nBucket[n] = false -- not necessary, but allows garbage collection of table
+
+                i2 = nParent[i1]
+                i3 = nodes[nChild1[i1] == n and 2 or 1][i1] -- 'n' sibling
+                nParent[i3] = i2
+
+                if i2 then
+                    nodes[nChild1[i2] == i1 and 1 or 2][i2] = i3 -- set 'n'.parent.parent.child(1|2) ref. to 'n' sibling
+                else -- 'n'.parent was root
+                    bt.BT_rootID = i3
+                end
+            end
+        else -- size > 1
+            for i = 1, size-1 do
+                if bucket[i] == id then
+                    bucket[i] = bucket[size]
+                end
+            end
+        end
+        bucket[size] = nil
+    end
+    ---@endsection
+
+    ---@section BT_nnSearch
+    ---@param x number
+    ---@param y number
+    ---@param z number
+    ---@return number dist2, integer pointID
+    bt.BT_nnSearch = function(x,y,z, dX, dY, dZ, r1, r2)
+        buffer1[1] = bt.BT_rootID --'buffer1' will act as a stack
+        buffer2[1] = 0
+        size = 1       -- size of buffer
+        bestDist = 1e300
+        bestP = -1
+
+        while size > 0 do
+            n = buffer1[size]
+            dist = buffer2[size]
+            size = size - 1
+
+            bucket = nBucket[n]
+            while not bucket and dist < bestDist do
+                i1 = nChild1[n]
+                i2 = nChild2[n]
+                size = size + 1
+
+                dx = nx[i1] - x
+                dy = ny[i1] - y
+                dz = nz[i1] - z
+                dX = nx[i2] - x
+                dY = ny[i2] - y
+                dZ = nz[i2] - z
+                r1 = dx*dx + dy*dy + dz*dz - nr[i1]^2
+                r2 = dX*dX + dY*dY + dZ*dZ - nr[i2]^2
+
+                if r1 < r2 then
+                    n = i1
+                    dist = r1
+                    buffer1[size] = i2
+                    buffer2[size] = r2
+                else
+                    n = i2
+                    dist = r2
+                    buffer1[size] = i1
+                    buffer2[size] = r1
+                end
+
+                bucket = nBucket[n]
+            end
+
+            if bucket then
+                for i = 1, #bucket do
+                    i = bucket[i]
+                    dx = px[i] - x
+                    dy = py[i] - y
+                    dz = pz[i] - z
+
+                    r1 = dx*dx + dy*dy + dz*dz
+                    if r1 < bestDist then
+                        bestP = i
+                        bestDist = r1
+                        i3 = n
+                    end
+                end
+            end
+        end
+        return bestDist, bestP
+    end
+    ---@endsection
+
+    ---@section BT_nnSearchApprox
+    ---Returns nearest leaf node to (x,y,z)
+    ---@param x number
+    ---@param y number
+    ---@param z number
+    ---@return integer node
+    bt.BT_nnSearchApprox = function(x,y,z)
+        n = bt.BT_rootID
+        bucket = nBucket[n]
+        while not bucket do
+            i1 = nChild1[n]
+            i2 = nChild2[n]
+            n = (nx[i1]-x)^2 + (ny[i1]-y)^2 + (nz[i1]-z)^2 < (nx[i2]-x)^2 + (ny[i2]-y)^2 + (nz[i2]-z)^2 and i1 or i2
+            bucket = nBucket[n]
+        end
+        return n
+    end
+    ---@endsection
+
+    ---@section BT_treeCost
+    bt.BT_treeCost = function(cost, rec)
+        cost = 0
+        function rec(id)
+            if nBucket[id] then
+                cost = cost + nr[id]
+            else
+                rec(nChild1[id])
+                rec(nChild2[id])
+            end
+        end
+        rec(bt.BT_rootID)
+        return cost
+    end
+    ---@endsection
+
+
+    ---@cast bt +BallTree3D
+    return bt
+end
+---@endsection _BALL_TREE_
+
+
+
+
+
+---@section __DEBUG_BALL_TREE__
+-- [===[
+local px, py, pz = newTables{3}
+local points = list{px, py, pz}
+local pbuffer = {0,0,0}
+local ballTree = BallTree3D(px, py, pz)
+
+local num = 10000
+local width, height = 32*10, 32*10
+
+math.randomseed(0)
+local rand = function(scale)
+    return (math.random() - 0) * (scale or 1)
+end
+
+--[=[
+do
+    local t1 = os.clock()
+    for i = 1, num do
+        pbuffer[1] = rand(width)
+        pbuffer[2] = rand(height)
+        local id = points.list_insert(pbuffer)
+        ballTree.BT_insert(id)
+    end
+    local t2 = os.clock()
+    print("Time: "..(t2-t1))
+    print("TreeCost: "..ballTree.BT_treeCost())
+end
+--]=]
+
+local _touched = false
+function onTick()
+    local touched = input.getBool(1)
+    local sx = input.getNumber(3)
+    local sy = input.getNumber(4)
+
+    if touched and touched ~= _touched then
+        if input.getBool(2) then
+            local dist2, p = ballTree.BT_nnSearch(sx, sy, 0)
+            ballTree.BT_remove(p)
+        else
+            pbuffer[1] = sx
+            pbuffer[2] = sy
+            local id = points.list_insert(pbuffer)
+            ballTree.BT_insert(id)
+        end
+    end
+    _touched = touched
+
+end
+
+local nChild1, nChild2, nx, ny, nz, nr, nBucket, nParent, nDepth = table.unpack(ballTree.BT_nodes)
+function drawRecursion(n)
+    local d = 255/nDepth[n]
+    screen.setColor(255, 255 - d, 0, d)
+    screen.drawCircle(nx[n], ny[n], nr[n])
+
+    local b = nBucket[n]
+    if b then
+        screen.setColor(0, 255, 0, 150)
+        for i = 1, #b do
+            i = b[i]
+            screen.drawCircleF(px[i], py[i], 0.6)
+        end
+    else
+        drawRecursion(nChild1[n])
+        drawRecursion(nChild2[n])
+    end
+end
+
+function onDraw()
+    drawRecursion(ballTree.BT_rootID)
+
+    screen.setColor(255,255,255)
+    screen.drawText(1,1, "Max Depth: "..tostring(nDepth[ballTree.BT_rootID]))
+end
+
+--]===]
+---@endsection
+
+
+
+
+
+-- MIT License
+-- 
+-- Copyright (c) 2025 Jumper-44
+-- 
+-- Permission is hereby granted, free of charge, to any person obtaining a copy
+-- of this software and associated documentation files (the "Software"), to deal
+-- in the Software without restriction, including without limitation the rights
+-- to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+-- copies of the Software, and to permit persons to whom the Software is
+-- furnished to do so, subject to the following conditions:
+-- 
+-- The above copyright notice and this permission notice shall be included in all
+-- copies or substantial portions of the Software.
+-- 
+-- THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+-- IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+-- FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+-- AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+-- LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+-- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+-- SOFTWARE.
