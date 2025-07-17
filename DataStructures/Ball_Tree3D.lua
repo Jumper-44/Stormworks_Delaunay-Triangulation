@@ -45,6 +45,9 @@ require("newTables")
 -- ---@field BT_nnSearchApprox fun(x: number, y: number, z: number): integer
 
 ---https://en.wikipedia.org/wiki/Ball_tree
+---A 3D bounding volume hierarchy of spheres where input data are points,  
+---and support nearest neighbor search.  
+---Using tree rotation heuristic to minimize sphere radius and tree depth.  
 ---@param px table
 ---@param py table
 ---@param pz table
@@ -52,7 +55,7 @@ require("newTables")
 BallTree3D = function(px, py, pz)
     local bt, nodesBuffer, buffer1, buffer2, nx, ny, nz, nr, nChild1, nChild2, nBucket, nParent, nDepth, nodes,
         unionSphere, refitSpheres, bucketFurthestSearch, sortBucketFunc, nDist2, pDist2, -- functions
-        x,y,z, dx,dy,dz, i1,i2,i3, size, dist, bucket, bestDist, bestP, n -- other locals
+        x,y,z, dx,dy,dz, i1,i2,i3, size, dist, bucket, bestDist, bestP, n -- other locals, also acts as "globals" in some specific places, so really spaghetti code
         =
         {px, py, pz},
         {false, false, 0,0,0,0, {}, false, 1},
