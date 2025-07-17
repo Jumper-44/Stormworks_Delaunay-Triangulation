@@ -23,6 +23,7 @@ do
         end
         _isTouched = screenConnection.isTouched
         simulator:setInputBool(2, simulator:getIsToggled(1))
+        simulator:setInputBool(3, simulator:getIsToggled(2))
     end
 end
 --]]
@@ -39,8 +40,8 @@ require("newTables")
 ---@field BT_rootID integer
 ---@field BT_insert fun(id: integer): integer
 ---@field BT_remove fun(id: integer)
----@field BT_nnSearch fun(x: number, y: number, z: number): integer, number
----@field BT_nnSearchApprox fun(x: number, y: number, z: number): integer, number
+---@field BT_nnSearch fun(x: number, y: number, z: number): number, integer
+---@field BT_nnSearchApprox fun(x: number, y: number, z: number): integer
 ---@field BT_treeCost fun(): number
 
 ---https://en.wikipedia.org/wiki/Ball_tree
@@ -70,7 +71,7 @@ BallTree3D = function(px, py, pz)
     ---@param sB integer
     ---@param buffer table {x, y, z, radius}
     ---@overload fun(integer, integer, table)
-    unionSphere = function(sA, sB, buffer, dist, rA, rB, rC, xC, yC, zC)
+    unionSphere = function(sA, sB, buffer, rA, rB, rC, xC, yC, zC)
         if nr[sA] > nr[sB] then
             sA, sB = sB, sA
         end
@@ -109,6 +110,10 @@ BallTree3D = function(px, py, pz)
         nr[n] = buffer[4]
     end
 
+    ---comment
+    ---@param n integer
+    ---@param sameR any local variable
+    ---@param prevDepth any local variable
     refitSpheres = function(n, sameR, prevDepth)
         while n do
             i1 = nChild1[n]
@@ -116,17 +121,47 @@ BallTree3D = function(px, py, pz)
             prevDepth = nDepth[n]
             nDepth[n] = math.max(nDepth[i1], nDepth[i2]) + 1
 
-            unionSphere(i1, i2, buffer1)
-            sameR = nr[n] == buffer1[4]
             if sameR then
                 if prevDepth == nDepth[n] then
                     break
                 end
             else
+                unionSphere(i1, i2, buffer1)
                 updateSphere(n, buffer1)
+                sameR = nr[n] == buffer1[4]
             end
 
-            n = nParent[n]
+            x = nParent[n]
+            -- [[ local rotation to minimize radius and tree depth
+            if x then
+                y = nParent[x]
+                if y then
+                    i1 = nChild1[x] == n and 2 or 1
+                    z = nodes[i1][x] -- 'n' sibling
+
+                    i2 = nChild1[y] == x and 2 or 1
+                    i3 = nodes[i2][y] -- 'n'.parent sibling
+
+                    unionSphere(i3, z, buffer1)
+                    if sameR then
+                        dist = nr[n]
+                    else
+                        unionSphere(n, z, buffer2)
+                        dist = buffer2[4]
+                    end
+
+                    if buffer1[4] / dist + (nDepth[i3] / nDepth[n])*0.5 < 1.5 then
+                        nParent[i3] = x
+                        nParent[n]  = y
+                        nodes[i1%2+1][x] = i3
+                        nodes[i2][y] = n
+                        sameR = false
+                    end
+                end
+            end
+            --]]
+
+            n = x
         end
     end
 
@@ -156,6 +191,30 @@ BallTree3D = function(px, py, pz)
         return bestP, bestDist
     end
 
+    refitBucket = function(n)
+        bucket = nBucket[n]
+        size = #bucket
+        x = 0
+        y = 0
+        z = 0
+
+        for j = 1, size do
+            j = bucket[j]
+            x = x + px[j]
+            y = y + py[j]
+            z = z + pz[j]
+        end
+        x = x/size
+        y = y/size
+        z = z/size
+
+        nx[n] = x
+        ny[n] = y
+        nz[n] = z
+        _, dist = bucketFurthestSearch(bucket, size, x,y,z)
+        nr[n] = dist^0.5
+    end
+
     sortBucketFunc = function(p1, p2)
         return buffer1[p1] < buffer1[p2]
     end
@@ -183,31 +242,31 @@ BallTree3D = function(px, py, pz)
 
         size = #bucket + 1
         bucket[size] = id
-        if size == 16 then -- split bucket in two
-            i1 = bucketFurthestSearch(bucket, 15, x, y, z) -- we know xyz is 16th point in bucket
+        if size == 8 then -- split bucket in two
+            i1 = bucketFurthestSearch(bucket, 7, x, y, z) -- we know xyz is 8th point in bucket
             dx = px[i1]
             dy = py[i1]
             dz = pz[i1]
-            i2 = bucketFurthestSearch(bucket, 16, dx, dy, dz)
+            i2 = bucketFurthestSearch(bucket, 8, dx, dy, dz)
 
             dx = dx - px[i2]
             dy = dy - py[i2]
             dz = dz - pz[i2]
 
-            for i = 1, 16 do
+            for i = 1, 8 do
                 i = bucket[i]
                 buffer1[i] = dx*px[i] + dy*py[i] + dz*pz[i]
             end
 
             table.sort(bucket, sortBucketFunc)
 
-            for i = 1, 16 do -- table hash cleanup
+            for i = 1, 8 do -- table hash cleanup
                 buffer1[bucket[i]] = nil
             end
 
             nodesBuffer[7] = {}
-            for i = 9, 16 do
-                nodesBuffer[7][i - 8] = bucket[i]
+            for i = 5, 8 do
+                nodesBuffer[7][i - 4] = bucket[i]
                 bucket[i] = nil
             end
 
@@ -229,30 +288,8 @@ BallTree3D = function(px, py, pz)
             end
 
             -- update child nodes balls
-            for i = 1, 2 do
-                i = nodes[i][i2]
-                bucket = nBucket[i]
-                x = 0
-                y = 0
-                z = 0
-
-                for j = 1, 8 do
-                    j = bucket[j]
-                    x = x + px[j]
-                    y = y + py[j]
-                    z = z + pz[j]
-                end
-                x = x/8
-                y = y/8
-                z = z/8
-
-                nx[i] = x
-                ny[i] = y
-                nz[i] = z
-                _, dist = bucketFurthestSearch(bucket, 8, x,y,z)
-                nr[i] = dist^0.5
-            end
-
+            refitBucket(n)
+            refitBucket(i1)
             refitSpheres(i2)
         else
             -- expand radius of node to include new inserted point if needed
@@ -263,6 +300,7 @@ BallTree3D = function(px, py, pz)
             dist = (dx*dx + dy*dy + dz*dz)^0.5
             if nr[n] < dist then
                 nr[n] = dist
+                refitBucket(n)
                 refitSpheres(nParent[n])
             end
         end
@@ -270,6 +308,9 @@ BallTree3D = function(px, py, pz)
     ---@endsection
 
     ---@section BT_remove
+    ---assumes point 'id' to be removed is indeed in tree
+    ---else another nearby point will be unknowingly removed
+    ---easy check to mitigate, but assuming you know your data
     ---@param id integer point id
     bt.BT_remove = function(id)
         bt.BT_nnSearch(px[id], py[id], pz[id])
@@ -289,6 +330,7 @@ BallTree3D = function(px, py, pz)
 
                 if i2 then
                     nodes[nChild1[i2] == i1 and 1 or 2][i2] = i3 -- set 'n'.parent.parent.child(1|2) ref. to 'n' sibling
+                    refitSpheres(i2)
                 else -- 'n'.parent was root
                     bt.BT_rootID = i3
                 end
@@ -372,7 +414,7 @@ BallTree3D = function(px, py, pz)
     ---@endsection
 
     ---@section BT_nnSearchApprox
-    ---Returns nearest leaf node to (x,y,z)
+    ---Returns nearest leaf node sphere center to (x,y,z)
     ---@param x number
     ---@param y number
     ---@param z number
@@ -383,7 +425,7 @@ BallTree3D = function(px, py, pz)
         while not bucket do
             i1 = nChild1[n]
             i2 = nChild2[n]
-            n = (nx[i1]-x)^2 + (ny[i1]-y)^2 + (nz[i1]-z)^2 < (nx[i2]-x)^2 + (ny[i2]-y)^2 + (nz[i2]-z)^2 and i1 or i2
+            n = (nx[i1]-x)^2 + (ny[i1]-y)^2 + (nz[i1]-z)^2  < (nx[i2]-x)^2 + (ny[i2]-y)^2 + (nz[i2]-z)^2  and i1 or i2
             bucket = nBucket[n]
         end
         return n
@@ -394,9 +436,8 @@ BallTree3D = function(px, py, pz)
     bt.BT_treeCost = function(cost, rec)
         cost = 0
         function rec(id)
-            if nBucket[id] then
+            if not nBucket[id] then
                 cost = cost + nr[id]
-            else
                 rec(nChild1[id])
                 rec(nChild2[id])
             end
@@ -431,28 +472,61 @@ local rand = function(scale)
     return (math.random() - 0) * (scale or 1)
 end
 
---[=[
+-- [=[
 do
-    local t1 = os.clock()
-    for i = 1, num do
+    for i = 1, num do -- init dataset
         pbuffer[1] = rand(width)
         pbuffer[2] = rand(height)
-        local id = points.list_insert(pbuffer)
-        ballTree.BT_insert(id)
+        points.list_insert(pbuffer)
     end
-    local t2 = os.clock()
-    print("Time: "..(t2-t1))
-    print("TreeCost: "..ballTree.BT_treeCost())
+
+--    local t1, t2
+--    t1 = os.clock()
+--    for i = 1, num do
+--        ballTree.BT_insert(i)
+--    end
+--    t2 = os.clock()
+--    print("Time insert: "..(t2-t1))
+--    print("TreeCost: "..ballTree.BT_treeCost())
+--
+--    t1 = os.clock()
+--    for i = 1, num do
+--        ballTree.BT_remove(i)
+--    end
+--    t2 = os.clock()
+--    print("Time remove: "..(t2-t1))
+--    print("TreeCost: "..ballTree.BT_treeCost())
+--
+--    t1 = os.clock()
+--    for i = 1, num do
+--        ballTree.BT_insert(i)
+--    end
+--    t2 = os.clock()
+--    print("Time insert: "..(t2-t1))
+--    print("TreeCost: "..ballTree.BT_treeCost())
 end
 --]=]
 
+
+local nChild1, nChild2, nx, ny, nz, nr, nBucket, nParent, nDepth = table.unpack(ballTree.BT_nodes)
+local drawNearestPoint, dist
+local sx, sy, dx, dy
 local _touched = false
+
 function onTick()
     local touched = input.getBool(1)
-    local sx = input.getNumber(3)
-    local sy = input.getNumber(4)
+    sx = input.getNumber(3)
+    sy = input.getNumber(4)
 
-    if touched and touched ~= _touched then
+    drawNearestPoint = input.getBool(3) and touched
+
+    if drawNearestPoint then
+        local d, p = ballTree.BT_nnSearch(sx, sy, 0)
+        dx = px[p]
+        dy = py[p]
+        dist = d^0.5
+
+    elseif touched and touched ~= _touched then
         if input.getBool(2) then
             local dist2, p = ballTree.BT_nnSearch(sx, sy, 0)
             ballTree.BT_remove(p)
@@ -464,17 +538,19 @@ function onTick()
         end
     end
     _touched = touched
-
 end
 
-local nChild1, nChild2, nx, ny, nz, nr, nBucket, nParent, nDepth = table.unpack(ballTree.BT_nodes)
 function drawRecursion(n)
     local d = 255/nDepth[n]
-    screen.setColor(255, 255 - d, 0, d)
+    local b = nBucket[n]
+
+    screen.setColor(128 + rand(127), 255 - d, rand(255-d/2), d)
     screen.drawCircle(nx[n], ny[n], nr[n])
 
-    local b = nBucket[n]
     if b then
+        --screen.setColor(128 + rand(127), 255 - d, rand(255-d/2), d)
+        --screen.drawCircle(nx[n], ny[n], nr[n])
+
         screen.setColor(0, 255, 0, 150)
         for i = 1, #b do
             i = b[i]
@@ -487,10 +563,16 @@ function drawRecursion(n)
 end
 
 function onDraw()
+    math.randomseed(1)
     drawRecursion(ballTree.BT_rootID)
-
     screen.setColor(255,255,255)
     screen.drawText(1,1, "Max Depth: "..tostring(nDepth[ballTree.BT_rootID]))
+
+    if drawNearestPoint then
+        screen.setColor(0, 255, 0)
+        screen.drawLine(sx, sy, dx, dy)
+        screen.drawText(1, 7, "Dist: "..dist)
+    end
 end
 
 --]===]
