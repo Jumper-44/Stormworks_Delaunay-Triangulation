@@ -40,13 +40,13 @@ local v_x, v_y, v_z, v_near_dtriangle, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVis
     traingle_balltree, check_queue, check_queue_ptr, check_queue_size,
     cameraTransform, triangleDrawBuffer,
     pointSub, add_vertex, add_dtriangle, -- functions
-    px_cx, px_cy, px_cx_pos, px_cy_pos, frustumPlanes,
+    px_cx, px_cy, px_cx_pos, px_cy_pos, frustumPlanes, focalLength,
     v1, v2, v3,
     nChild1, nChild2, nx, ny, nz, nr, nBucket, x, y, z, w, X, Y, Z
 
 local SCREEN, HMD, pointBuffer, point_min_density_squared, max_triangle_size_squared, triangle_buffer_refreshrate, max_drawn_triangles, colors =
     multiReadPropertyNumbers("SCREEN", {}),
-    {256, 192, 128, 96, 128, 96}, -- {width, height, width/2, height/2, width/2, height/2}
+    {256, 192, 128, 96, 128, 96, -345.6}, -- {width, height, width/2, height/2, width/2, height/2, -height/math.tan(1.014197/2)}
     {0,0,0},
     property.getNumber("Min_D"), property.getNumber("Max_T"),
     property.getNumber("TBR"),   property.getNumber("MDT"),
@@ -154,7 +154,7 @@ function initialize()
     ---@param sz any    local variable
     ---@param sr any    local variable
     ---@param b  any    local variable
-    function frustumCull(n, sx, sy, sz, sr, b)
+    function frustumCull(n, sx, sy, sz, sr, b, dist)
         triangleDrawBuffer = {}
         triangleDrawBufferSize = 0
         check_queue_ptr = 1
@@ -167,21 +167,26 @@ function initialize()
             sy = ny[n]
             sz = nz[n]
             sr = -nr[n]
+            dist = sx*fPlaneBack[1] + sy*fPlaneBack[2] + sz*fPlaneBack[3] + fPlaneBack[4]
 
-            if not (
+            if not ((dist  < sr) or
                (sx*fPlaneRight[1]  + sy*fPlaneRight[2]  + sz*fPlaneRight[3]  + fPlaneRight[4]  < sr) or
                (sx*fPlaneLeft[1]   + sy*fPlaneLeft[2]   + sz*fPlaneLeft[3]   + fPlaneLeft[4]   < sr) or
                (sx*fPlaneBottom[1] + sy*fPlaneBottom[2] + sz*fPlaneBottom[3] + fPlaneBottom[4] < sr) or
                (sx*fPlaneTop[1]    + sy*fPlaneTop[2]    + sz*fPlaneTop[3]    + fPlaneTop[4]    < sr) or
-               (sx*fPlaneBack[1]   + sy*fPlaneBack[2]   + sz*fPlaneBack[3]   + fPlaneBack[4]   < sr) or
                (sx*fPlaneFront[1]  + sy*fPlaneFront[2]  + sz*fPlaneFront[3]  + fPlaneFront[4]  < sr))
             then
                 b = nBucket[n]
                 if b then
-                    for i = 1, #b do
-                        triangleDrawBufferSize = triangleDrawBufferSize + 1
-                        triangleDrawBuffer[triangleDrawBufferSize] = b[i]
-                    end
+                    --if focalLength * sr / dist < 10 then
+                    --    triangleDrawBufferSize = triangleDrawBufferSize + 1
+                    --    triangleDrawBuffer[triangleDrawBufferSize] = b[1]
+                    --else
+                        for i = 1, #b do
+                            triangleDrawBufferSize = triangleDrawBufferSize + 1
+                            triangleDrawBuffer[triangleDrawBufferSize] = b[i]
+                        end
+                    --end
                 else
                     check_queue_size = check_queue_size + 2
                     check_queue[check_queue_size-1] = nChild1[n]
@@ -509,7 +514,7 @@ function onTick()
     drawWireframe = input.getBool(4)
 
     if input.getBool(5) then -- is head mounted display (HMD)?
-        width, height, px_cx, px_cy, px_cx_pos, px_cy_pos = table.unpack(HMD)
+        width, height, px_cx, px_cy, px_cx_pos, px_cy_pos, focalLength = table.unpack(HMD)
     else
         width  = SCREEN[1]
         height = SCREEN[2]
@@ -517,6 +522,7 @@ function onTick()
         px_cy  = height/2
         px_cx_pos = px_cx + SCREEN[9]
         px_cy_pos = px_cy + SCREEN[10]
+        focalLength = -(SCREEN[3] + 0.635) / SCREEN[6] * height -- -(n / (t - b)) * screen_height
     end
 
     if renderOn then
