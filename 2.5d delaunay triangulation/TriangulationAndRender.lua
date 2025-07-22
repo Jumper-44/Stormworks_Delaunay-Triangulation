@@ -37,20 +37,20 @@ local v_x, v_y, v_z, v_near_dtriangle, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVis
     dt_v1, dt_v2, dt_v3, dt_neighbor1, dt_neighbor2, dt_neighbor3, dt_isChecked, dt_isInvalid, dt_isSurface,            --dt shorthand for delaunay triangle
     dtriangle_check_queue, invalid_dtriangles, edge_boundary_neighbor, edge_boundary_v1, edge_boundary_v2, edge_shared,
     vertices, vertices_balltree, vertices_buffer, triangles, triangles_buffer, dtriangles, dtriangles_neighbors, dtriangles_buffer,
-    traingle_balltree, check_queue, check_queue_ptr, check_queue_size,
+    traingle_balltree, check_queue, check_queue_size,
     cameraTransform, triangleDrawBuffer,
     pointSub, add_vertex, add_dtriangle, -- functions
     px_cx, px_cy, px_cx_pos, px_cy_pos, frustumPlanes, focalLength,
     v1, v2, v3,
     nChild1, nChild2, nx, ny, nz, nr, nBucket, x, y, z, w, X, Y, Z
 
-local SCREEN, HMD, pointBuffer, point_min_density_squared, max_triangle_size_squared, triangle_buffer_refreshrate, max_drawn_triangles, colors =
+local SCREEN, HMD, pointBuffer, point_min_density, max_triangle_size_squared, triangle_buffer_refreshrate, max_drawn_triangles, colors =
     multiReadPropertyNumbers("SCREEN", {}),
     {256, 192, 128, 96, 128, 96, -345.6}, -- {width, height, width/2, height/2, width/2, height/2, -height/math.tan(1.014197/2)}
     {0,0,0},
     property.getNumber("Min_D"), property.getNumber("Max_T"),
     property.getNumber("TBR"),   property.getNumber("MDT"),
-    {{flat = strToNumbers "WF", steep = strToNumbers "WS"}, {flat = strToNumbers "GF", steep = strToNumbers "GS"}} -- colors = {color_water, color_ground}
+    {strToNumbers "CW", strToNumbers "CG"} -- colors = {color_water, color_ground}
 
 --local SCREEN = {
 --  [1]  w              -- Pixel width of screen
@@ -157,12 +157,12 @@ function initialize()
     function frustumCull(n, sx, sy, sz, sr, b, dist)
         triangleDrawBuffer = {}
         triangleDrawBufferSize = 0
-        check_queue_ptr = 1
         check_queue_size = 1
         check_queue[1] = traingle_balltree.BT_rootID
 
-        repeat
-            n = check_queue[check_queue_ptr]
+        while check_queue_size > 0 do
+            n = check_queue[check_queue_size]
+            check_queue_size = check_queue_size - 1
             sx = nx[n]
             sy = ny[n]
             sz = nz[n]
@@ -193,9 +193,7 @@ function initialize()
                     check_queue[check_queue_size]   = nChild2[n]
                 end
             end
-
-            check_queue_ptr = check_queue_ptr + 1
-        until check_queue_ptr > check_queue_size
+        end
 
 -- AABB culling
 --        repeat ---@cast check_queue table
@@ -400,24 +398,31 @@ function dt_insert_point(nearVertexID, point)
         v2 = dt_v2[new_triangle]
         v3 = dt_v3[new_triangle]
         if min_enclosing_circleradius_of_triangle(v1, v2, v3) < max_triangle_size_squared then
-            adz = v_z[v1]-v_z[v2]
-            bdz = v_z[v2]-v_z[v3]
+            c = (v_y[v1] + v_y[v2] + v_y[v3]) < 0 and colors[1] or colors[2] -- is triangle centroid center less than 0, i.e. underwater            
 
-            -- crossproduct, but z-component is discarded
-            cdx = (v_y[v1]-v_y[v2])*bdz - adz*(v_y[v2]-v_y[v3])
-            cdy = adz*(v_x[v2]-v_x[v3]) - (v_x[v1]-v_x[v2])*bdz
-                                                                    -- lightDirX, lightDirY = 0.28, -0.96  -- 0.28² + 0.96² = 1, light vector is normalized
-            t = (0.28*cdx - 0.96*cdy) / (cdx*cdx + cdy*cdy)^0.5     -- (lightDirX*cdx + lightDirY*cdy) / cd_length
-            t = t*t -- absoloute value and better curve
+            a1 = v_x[v1] - v_x[v2]
+            a2 = v_y[v1] - v_y[v2]
+            a3 = v_z[v1] - v_z[v2]
+            b1 = v_x[v2] - v_x[v3]
+            b2 = v_y[v2] - v_y[v3]
+            b3 = v_z[v2] - v_z[v3]
+
+            cdx = a2*b3 - a3*b2
+            cdy = a3*b1 - a1*b3
+            cdz = a1*b2 - a2*b1
+
+            t = math.min(cdy / (cdx*cdx + cdy*cdy + cdz*cdz)^0.5, 0.99) * (#c/3-1)
+            i = math.floor(t)
+            t = t - i
             inv_t = 1-t
-            c = 0 > (v_y[v1] + v_y[v2] + v_y[v3]) and colors[1] or colors[2] -- is triangle centroid center less than 0, i.e. underwater
 
             for j = 1, 3 do
                 triangles_buffer[j] = dtriangles[j][new_triangle]
-                triangles_buffer[j+3] = (c.flat[j]*t + c.steep[j]*inv_t) * t*t*0.7 + 0.3 -- rgb
+                index = 3*i+j
+                triangles_buffer[j+3] = c[index]*inv_t + c[index+3]*t
 
-                i = vertices[j]
-                triangles_buffer[j+6] = (i[v1] + i[v2] + i[v3])/3
+                vt = vertices[j]
+                triangles_buffer[j+6] = (vt[v1] + vt[v2] + vt[v3])/3
             end
 
             t = triangles.list_insert(triangles_buffer)
@@ -498,8 +503,13 @@ WorldToScreen_triangles = function()
     --    table.sort(triangleDrawBuffer, WorldToScreen_triangles_sortFunction) -- painter's algorithm | triangle centroid depth sort
     --end
 
-    for j = max_drawn_triangles+1, #triangleDrawBuffer do
-        triangleDrawBuffer[j] = nil
+    if max_drawn_triangles < #triangleDrawBuffer then
+        for j = 1, #triangleDrawBuffer-max_drawn_triangles do
+            triangleDrawBuffer[j*2 % max_drawn_triangles] = triangleDrawBuffer[max_drawn_triangles+j]
+        end
+        for j = max_drawn_triangles+1, #triangleDrawBuffer do
+            triangleDrawBuffer[j] = nil
+        end
     end
     triangleDrawBufferSize = #triangleDrawBuffer
 end
@@ -574,7 +584,7 @@ function onTick()
         if pointBuffer[1] ~= 0 and pointBuffer[2] ~= 0 then
             dist2, nearVertexID = vertices_balltree.BT_nnSearch(pointBuffer[1], pointBuffer[2], pointBuffer[3])
 
-            if dist2 > point_min_density_squared then
+            if dist2 > point_min_density then
                 dt_insert_point(nearVertexID, pointBuffer)
             end
         end
@@ -593,7 +603,7 @@ function onDraw()
             v2 = t_v2[i]
             v3 = t_v3[i]
 
-            colorHash = t_colorR[i]//10 << 16  |  t_colorG[i]//10 << 8  |  t_colorB[i]//16
+            colorHash = t_colorR[i]//16 << 16  |  t_colorG[i]//16 << 8  |  t_colorB[i]//16
             if prevColorHash ~= colorHash then
                 prevColorHash = colorHash
                 screen.setColor(t_colorR[i], t_colorG[i], t_colorB[i], color_alpha) -- setColor is roughly as expensive to call as drawTriangle
