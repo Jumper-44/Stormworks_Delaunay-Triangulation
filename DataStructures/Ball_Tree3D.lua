@@ -5,7 +5,7 @@
 --- Developed using LifeBoatAPI - Stormworks Lua plugin for VSCode - https://code.visualstudio.com/download (search "Stormworks Lua with LifeboatAPI" extension)
 
 
--- [[ DEBUG ONLY
+--[[ DEBUG ONLY
 do
     ---@type Simulator -- Set properties and screen sizes here - will run once when the script is loaded
     simulator = simulator
@@ -86,7 +86,7 @@ BallTree3D = function(px, py, pz)
     ---@param sA integer
     ---@param sB integer
     ---@return number r, number x, number y, number z
-    ---@overload fun(integer, integer, table): r: number, x: number, y: number, z: number
+    ---@overload fun(integer, integer): r: number, x: number, y: number, z: number
     unionSphere = function(sA, sB, rA, rB, rC)
         if nr[sA] > nr[sB] then
             sA, sB = sB, sA
@@ -105,7 +105,8 @@ BallTree3D = function(px, py, pz)
         end
     end
 
-    ---comment
+    ---go up tree trying rotations by heuristic to balance tree  
+    ---else refit spheres to enclose child spheres  
     ---@param n integer
     ---@param sameR any local variable
     refitSpheres = function(n, sameR)
@@ -269,7 +270,7 @@ BallTree3D = function(px, py, pz)
 
             nChild1[i2] = n
             nChild2[i2] = i1
-            nParent[n] = i2
+            nParent[n ] = i2
             nParent[i1] = i2
             if i3 then
                 nParent[i2] = i3
@@ -350,39 +351,41 @@ BallTree3D = function(px, py, pz)
             dist = buffer2[size]
             size = size - 1
 
+            ::loop::
             bucket = nBucket[n]
-            while not bucket and dist < bestDist do
-                i1 = nChild1[n]
-                i2 = nChild2[n]
-                size = size + 1
-
-                r1 = nDist2(i1, x,y,z) - nr[i1]^2
-                r2 = nDist2(i2, x,y,z) - nr[i2]^2
-
-                if r1 < r2 then
-                    n = i1
-                    dist = r1
-                    buffer1[size] = i2
-                    buffer2[size] = r2
-                else
-                    n = i2
-                    dist = r2
-                    buffer1[size] = i1
-                    buffer2[size] = r1
-                end
-
-                bucket = nBucket[n]
-            end
-
-            if bucket then
-                for i = 1, #bucket do
-                    i = bucket[i]
-                    r1 = pDist2(i, x,y,z)
-                    if r1 < bestDist then
-                        bestP = i
-                        bestDist = r1
-                        i3 = n -- 'i3' acts as global variable that can be accesed just after calling this func
+            r1 = bestDist + nr[n]
+            if dist < r1*r1 then
+                if bucket then
+                    for i = 1, #bucket do
+                        i = bucket[i]
+                        r1 = pDist2(i, x,y,z)^0.5
+                        if r1 < bestDist then
+                            bestP = i
+                            bestDist = r1
+                            i3 = n -- 'i3' acts as global variable that can be accesed just after calling this func
+                        end
                     end
+                else
+                    i1 = nChild1[n]
+                    i2 = nChild2[n]
+                    size = size + 1
+
+                    r1 = nDist2(i1, x,y,z)
+                    r2 = nDist2(i2, x,y,z)
+
+                    if r1 < r2 then
+                        n = i1
+                        dist = r1
+                        buffer1[size] = i2
+                        buffer2[size] = r2
+                    else
+                        n = i2
+                        dist = r2
+                        buffer1[size] = i1
+                        buffer2[size] = r1
+                    end
+
+                    goto loop
                 end
             end
         end
@@ -437,7 +440,7 @@ end
 
 
 ---@section __DEBUG_BALL_TREE__
--- [===[
+--[===[
 local px, py, pz = newTables{3}
 local points = list{px, py, pz}
 local pbuffer = {0,0,0}
