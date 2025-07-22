@@ -227,11 +227,11 @@ end
 ---@section __IKDTree_DEBUG__
 --[[
 do
-    local s1, s2 = 1e6, 5e5
+    local s1, s2 = 1e4, 5e5
     local pointBuffer = {}
     local px,py,pz = {},{},{}
-    local points = list({px,py,pz})
-    local t = IKDTree(px,py,pz)
+    local t = list{px,py,pz}
+    IKDTree(t, 3)
     local t1, t2
     local rand = math.random
     math.randomseed(123)
@@ -240,7 +240,7 @@ do
         pointBuffer[1] = (rand()-.5)*100
         pointBuffer[2] = (rand()-.5)*100
         pointBuffer[3] = (rand()-.5)*100
-        points.list_insert(pointBuffer)
+        t.list_insert(pointBuffer)
     end
     t1 = os.clock()
     for i = 1, s1 do
@@ -248,10 +248,10 @@ do
     end
     print("IKDTree init: "..(os.clock()-t1))
     t1 = os.clock()
-    for i = s2, s1 do
-        t.IKDTree_remove(i)
-    end
-    print("IKDTree rem:  "..(os.clock()-t1))
+--    for i = s2, s1 do
+--        t.IKDTree_remove(i)
+--    end
+--    print("IKDTree rem:  "..(os.clock()-t1))
 
 
     print("--- nearest neighbor ---")
@@ -262,21 +262,22 @@ do
         pointBuffer[3] = (rand()-.5)*100
 
         t1 = os.clock()
-        for i = 1, 100 do
+        for i = 1, s1 do
             nearest = t.IKDTree_nearestNeighbor(pointBuffer)      -- t.IKDTree_nearestNeighbors(pointBuffer, 1)[1]
         end
         t2 = os.clock()
 
-        local best, brute_n = 0x7fffffffffffffff, nil
-        for i = 1, s2 do
-            if t.IKDTree_len2(pointBuffer, i) < best then
-                best = t.IKDTree_len2(pointBuffer, i)
-                brute_n = i
-            end
-        end
+--        local best, brute_n = 0x7fffffffffffffff, nil
+--        for i = 1, s2 do
+--            if t.IKDTree_len2(pointBuffer, i) < best then
+--                best = t.IKDTree_len2(pointBuffer, i)
+--                brute_n = i
+--            end
+--        end
 
         time[k] = t2-t1
-        print("tree: "..t.IKDTree_len2(pointBuffer, nearest)..", brute: "..best..", is equal: "..tostring(nearest==brute_n)..", time: "..time[k])
+        print("Time: "..time[k])
+--        print("tree: "..t.IKDTree_len2(pointBuffer, nearest)..", brute: "..best..", is equal: "..tostring(nearest==brute_n)..", time: "..time[k])
     end
 
     local avg = 0
