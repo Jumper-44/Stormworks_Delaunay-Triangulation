@@ -66,11 +66,12 @@ local SCREEN, OPTIMIZATION, HMD, pointBuffer, COLOR_WATER, COLOR_GROUND =
 --}
 
 --local OPTIMIZATION = {
---  [1] Max_Drawn_Triangles!
---  [1] Triangle_Buffer_Refresh!
---  [1] Max_Triangle_Size_Squared!
---  [1] Min_Point_Distance!
---  [1] Flat_Terrain_Point_Distance
+--  [1] MaxDrawnTriangles
+--  [2] TriangleBufferRefresh
+--  [3] MaxTriangleSizeSquared
+--  [4] MinPointDist
+--  [5] FlatTerrainPointDist
+--  [6] PixelSizeCulling
 --}
 
 ---Helper function to reduce chars for arithemetic vector operation
@@ -185,15 +186,10 @@ function initialize()
             then
                 b = nBucket[n]
                 if b then
-                    --if focalLength * sr / dist < 10 then
-                    --    triangleDrawBufferSize = triangleDrawBufferSize + 1
-                    --    triangleDrawBuffer[triangleDrawBufferSize] = b[1]
-                    --else
-                        for i = 1, #b do
-                            triangleDrawBufferSize = triangleDrawBufferSize + 1
-                            triangleDrawBuffer[triangleDrawBufferSize] = b[i]
-                        end
-                    --end
+                    for i = 1, math.min(#b, math.ceil(focalLength * sr / dist / OPTIMIZATION[6] * #b)) do
+                        triangleDrawBufferSize = triangleDrawBufferSize + 1
+                        triangleDrawBuffer[triangleDrawBufferSize] = b[i]
+                    end
                 else
                     check_queue_size = check_queue_size + 2
                     check_queue[check_queue_size-1] = nChild1[n]
