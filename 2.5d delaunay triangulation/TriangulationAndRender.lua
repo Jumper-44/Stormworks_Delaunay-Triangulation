@@ -12,7 +12,7 @@ require("DataStructures.Ball_Tree3D")
 
 
 ---@param str string
----@param t table
+---@param t table|nil
 ---@overload fun(str: string):table
 function strToNumbers(str, t)
     t = t and t or {}
@@ -23,8 +23,9 @@ function strToNumbers(str, t)
 end
 
 ---@param str string
----@param t table
+---@param t any local variable
 function multiReadPropertyNumbers(str, t)
+    t = {}
     for w in property.getText(str):gmatch"[^!]+" do
         strToNumbers(w, t)
     end
@@ -44,13 +45,12 @@ local v_x, v_y, v_z, v_near_dtriangle, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVis
     v1, v2, v3,
     nChild1, nChild2, nx, ny, nz, nr, nBucket, x, y, z, w, X, Y, Z
 
-local SCREEN, HMD, pointBuffer, point_min_density, max_triangle_size_squared, triangle_buffer_refreshrate, max_drawn_triangles, colors =
-    multiReadPropertyNumbers("SCREEN", {}),
-    {256, 192, 128, 96, 128, 96, -345.6}, -- {width, height, width/2, height/2, width/2, height/2, -height/math.tan(1.014197/2)}
+local SCREEN, OPTIMIZATION, HMD, pointBuffer, COLOR_WATER, COLOR_GROUND =
+    multiReadPropertyNumbers "SCREEN",
+    multiReadPropertyNumbers "OPT",
+    strToNumbers "HMD",  --{256, 192, 128, 96, 128, 96, -345.6}, -- {width, height, width/2, height/2, width/2, height/2, -height/math.tan(1.014197/2)}
     {0,0,0},
-    property.getNumber("Min_D"), property.getNumber("Max_T"),
-    property.getNumber("TBR"),   property.getNumber("MDT"),
-    {strToNumbers "CW", strToNumbers "CG"} -- colors = {color_water, color_ground}
+    strToNumbers "CW", strToNumbers "CG"
 
 --local SCREEN = {
 --  [1]  w              -- Pixel width of screen
@@ -65,6 +65,13 @@ local SCREEN, HMD, pointBuffer, point_min_density, max_triangle_size_squared, tr
 --  [10] pxOffsety      -- Pixel offset on screen, not applied to HMD
 --}
 
+--local OPTIMIZATION = {
+--  [1] Max_Drawn_Triangles!
+--  [1] Triangle_Buffer_Refresh!
+--  [1] Max_Triangle_Size_Squared!
+--  [1] Min_Point_Distance!
+--  [1] Flat_Terrain_Point_Distance
+--}
 
 ---Helper function to reduce chars for arithemetic vector operation
 ---Returns the 2d vector coordinates that is locally relative to point 'a' and points to point 'b'
@@ -397,8 +404,8 @@ function dt_insert_point(nearVertexID, point)
         v1 = dt_v1[new_triangle]
         v2 = dt_v2[new_triangle]
         v3 = dt_v3[new_triangle]
-        if min_enclosing_circleradius_of_triangle(v1, v2, v3) < max_triangle_size_squared then
-            c = (v_y[v1] + v_y[v2] + v_y[v3]) < 0 and colors[1] or colors[2] -- is triangle centroid center less than 0, i.e. underwater            
+        if min_enclosing_circleradius_of_triangle(v1, v2, v3) < OPTIMIZATION[3] then
+            c = (v_y[v1] + v_y[v2] + v_y[v3]) < 0 and COLOR_WATER or COLOR_GROUND
 
             a1 = v_x[v1] - v_x[v2]
             a2 = v_y[v1] - v_y[v2]
@@ -443,7 +450,7 @@ end
 
 WorldToScreen_triangles = function()
     local refreshCurrentFrame, currentTriangle, vertex_id, i
-    refreshCurrentFrame = frameTick % triangle_buffer_refreshrate == 0
+    refreshCurrentFrame = frameTick % OPTIMIZATION[2] == 0
 
     if refreshCurrentFrame then
         frustumCull()
@@ -503,11 +510,11 @@ WorldToScreen_triangles = function()
     --    table.sort(triangleDrawBuffer, WorldToScreen_triangles_sortFunction) -- painter's algorithm | triangle centroid depth sort
     --end
 
-    if max_drawn_triangles < #triangleDrawBuffer then
-        for j = 1, #triangleDrawBuffer-max_drawn_triangles do
-            triangleDrawBuffer[j*2 % max_drawn_triangles] = triangleDrawBuffer[max_drawn_triangles+j]
+    if OPTIMIZATION[1] < #triangleDrawBuffer then
+        for j = 1, #triangleDrawBuffer-OPTIMIZATION[1] do
+            triangleDrawBuffer[j*2 % OPTIMIZATION[1]] = triangleDrawBuffer[OPTIMIZATION[1]+j]
         end
-        for j = max_drawn_triangles+1, #triangleDrawBuffer do
+        for j = OPTIMIZATION[1]+1, #triangleDrawBuffer do
             triangleDrawBuffer[j] = nil
         end
     end
@@ -583,8 +590,9 @@ function onTick()
 
         if pointBuffer[1] ~= 0 and pointBuffer[2] ~= 0 then
             dist2, nearVertexID = vertices_balltree.BT_nnSearch(pointBuffer[1], pointBuffer[2], pointBuffer[3])
+            z = 1 + math.abs(pointBuffer[2] - v_y[nearVertexID])
 
-            if dist2 > point_min_density then
+            if dist2 > math.max(OPTIMIZATION[4], OPTIMIZATION[5] / z) then
                 dt_insert_point(nearVertexID, pointBuffer)
             end
         end
@@ -603,7 +611,7 @@ function onDraw()
             v2 = t_v2[i]
             v3 = t_v3[i]
 
-            colorHash = t_colorR[i]//16 << 16  |  t_colorG[i]//16 << 8  |  t_colorB[i]//16
+            colorHash = t_colorR[i]//20 << 16  |  t_colorG[i]//20 << 8  |  t_colorB[i]//20
             if prevColorHash ~= colorHash then
                 prevColorHash = colorHash
                 screen.setColor(t_colorR[i], t_colorG[i], t_colorB[i], color_alpha) -- setColor is roughly as expensive to call as drawTriangle
