@@ -5,7 +5,7 @@
 --- Developed using LifeBoatAPI - Stormworks Lua plugin for VSCode - https://code.visualstudio.com/download (search "Stormworks Lua with LifeboatAPI" extension)
 
 
---[[ DEBUG ONLY
+-- [[ DEBUG ONLY
 do
     ---@type Simulator -- Set properties and screen sizes here - will run once when the script is loaded
     simulator = simulator
@@ -69,11 +69,17 @@ BallTree3D = function(px, py, pz)
     bt.BT_rootID = 1
 
     nDist2 = function(n, x,y,z)
-        return (nx[n]-x)^2 + (ny[n]-y)^2 + (nz[n]-z)^2
+        dx = nx[n]-x
+        dy = ny[n]-y
+        dz = nz[n]-z
+        return dx*dx + dy*dy + dz*dz
     end
 
     pDist2 = function(n, x,y,z)
-        return (px[n]-x)^2 + (py[n]-y)^2 + (pz[n]-z)^2
+        x = px[n]-x
+        y = py[n]-y
+        z = pz[n]-z
+        return x*x + y*y + z*z
     end
 
     ---https://www.jasondavies.com/maps/circle-tree/  
@@ -86,10 +92,7 @@ BallTree3D = function(px, py, pz)
             sA, sB = sB, sA
         end
 
-        dx = nx[sB] - nx[sA]
-        dy = ny[sB] - ny[sA]
-        dz = nz[sB] - nz[sA]
-        dist = (dx*dx + dy*dy + dz*dz)^0.5
+        dist = nDist2(sB, nx[sA], ny[sA], nz[sA])^0.5
         rA = nr[sA]
         rB = nr[sB]
 
@@ -336,7 +339,7 @@ BallTree3D = function(px, py, pz)
     ---@param z number
     ---@return number dist2, integer pointID
     bt.BT_nnSearch = function(x,y,z, r1, r2)
-        buffer1[1] = bt.BT_rootID --'buffer1' will act as a stack
+        buffer1[1] = bt.BT_rootID -- buffer will act as a stack
         buffer2[1] = 0
         size = 1       -- size of buffer
         bestDist = 1e300
@@ -434,7 +437,7 @@ end
 
 
 ---@section __DEBUG_BALL_TREE__
---[===[
+-- [===[
 local px, py, pz = newTables{3}
 local points = list{px, py, pz}
 local pbuffer = {0,0,0}
