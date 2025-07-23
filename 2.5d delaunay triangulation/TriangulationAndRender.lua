@@ -421,7 +421,10 @@ function dt_insert_point(nearVertexID, point)
             cdy = a3*b1 - a1*b3
             cdz = a1*b2 - a2*b1
 
-            t = math.min(cdy / (cdx*cdx + cdy*cdy + cdz*cdz)^0.5, 0.99) * (#c/3-1)
+            magnitude = (cdx*cdx + cdy*cdy + cdz*cdz)^0.5
+
+            t = math.min(cdy / magnitude, 0.99) * (#c/3-1)
+            shade = (cdx * 0.28 + cdy * 0.96) / magnitude
             i = math.floor(t)
             t = t - i
             inv_t = 1-t
@@ -429,7 +432,7 @@ function dt_insert_point(nearVertexID, point)
             for j = 1, 3 do
                 triangles_buffer[j] = dtriangles[j][new_triangle]
                 index = 3*i+j
-                triangles_buffer[j+3] = c[index]*inv_t + c[index+3]*t
+                triangles_buffer[j+3] = (c[index]*inv_t + c[index+3]*t) * shade
 
                 vt = vertices[j]
                 triangles_buffer[j+6] = (vt[v1] + vt[v2] + vt[v3])/3
