@@ -34,10 +34,12 @@ end
 
 -- globally scoped locals
 local v_x, v_y, v_z, v_near_dtriangle, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVisible, v_frame,                          --v shorthand for vertex
-    t_v1, t_v2, t_v3, t_colorR, t_colorG, t_colorB, t_cx, t_cy, t_cz, -- t_centroidDepth,                                                    --t shorthand for triangle
-    dt_v1, dt_v2, dt_v3, dt_neighbor1, dt_neighbor2, dt_neighbor3, dt_isChecked, dt_isInvalid, dt_isSurface,            --dt shorthand for delaunay triangle
-    dtriangle_check_queue, invalid_dtriangles, edge_boundary_neighbor, edge_boundary_v1, edge_boundary_v2, edge_shared,
+    t_v1, t_v2, t_v3, t_colorR, t_colorG, t_colorB, t_cx, t_cy, t_cz, -- t_centroidDepth,                               --t shorthand for triangle
+--    dt_v1, dt_v2, dt_v3, dt_neighbor1, dt_neighbor2, dt_neighbor3, dt_isChecked, dt_isInvalid, dt_isSurface,            --dt shorthand for delaunay triangle
+--    dtriangle_check_queue, invalid_dtriangles, edge_boundary_neighbor, edge_boundary_v1, edge_boundary_v2, edge_shared,
     vertices, vertices_balltree, vertices_buffer, triangles, triangles_buffer, dtriangles, dtriangles_neighbors, dtriangles_buffer,
+--    triangleDeleteBuffer1, triangleDeleteBuffer2, triangleDeleteBufferSize1, triangleDeleteBufferSize2,
+--    ballTreeAddDeleteBuffer, triangleCullBuffer, triangleCullBufferSize, currentCullWork, maxCullWork,
     traingle_balltree, check_queue, check_queue_size,
     cameraTransform, triangleDrawBuffer,
     pointSub, add_vertex, add_dtriangle, -- functions
@@ -45,7 +47,7 @@ local v_x, v_y, v_z, v_near_dtriangle, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVis
     v1, v2, v3,
     nChild1, nChild2, nx, ny, nz, nr, nBucket, x, y, z, w, X, Y, Z
 
-local SCREEN, OPTIMIZATION, HMD, pointBuffer, COLOR_WATER, COLOR_GROUND =
+SCREEN, OPTIMIZATION, HMD, pointBuffer, COLOR_WATER, COLOR_GROUND =
     multiReadPropertyNumbers "SCREEN",
     multiReadPropertyNumbers "OPT",
     strToNumbers "HMD",  --{256, 192, 128, 96, 128, 96, -345.6}, -- {width, height, width/2, height/2, width/2, height/2, -height/math.tan(1.014197/2)}
@@ -118,8 +120,8 @@ function initialize()
     dt_v1, dt_v2, dt_v3, dt_neighbor1, dt_neighbor2, dt_neighbor3, dt_isChecked, dt_isInvalid, dt_isSurface,
     dtriangle_check_queue, invalid_dtriangles, edge_boundary_neighbor, edge_boundary_v1, edge_boundary_v2, edge_shared,
     fPlaneRight, fPlaneLeft, fPlaneBottom, fPlaneTop, fPlaneBack, fPlaneFront,
-    check_queue,
-    cameraTransform, triangleDrawBuffer = newTables{43}
+    check_queue, triangleDeleteBuffer1, triangleDeleteBuffer2, ballTreeAddDeleteBuffer, triangleCullBuffer,
+    cameraTransform, triangleDrawBuffer = newTables{47}
 
     frustumPlanes = {fPlaneRight, fPlaneLeft, fPlaneBottom, fPlaneTop, fPlaneBack, fPlaneFront}
 
@@ -142,6 +144,10 @@ function initialize()
     insertionTick = 0
     frameTick = 0
     triangleDrawBufferSize = 0
+    triangleDeleteBufferSize1 = 0
+    triangleDeleteBufferSize2 = 0
+    cull = 0
+    triangleCullBufferSize = 0
 
     -- init super-triangle, roughly covers the playable area with islands
     add_vertex(-9E5, 0, -9E5)
@@ -163,12 +169,8 @@ function initialize()
     ---@param sr any    local variable
     ---@param b  any    local variable
     function frustumCull(n, sx, sy, sz, sr, b, dist)
-        triangleDrawBuffer = {}
-        triangleDrawBufferSize = 0
-        check_queue_size = 1
-        check_queue[1] = traingle_balltree.BT_rootID
-
-        while check_queue_size > 0 do
+        while check_queue_size > 0 and currentCullWork < maxCullWork do
+            currentCullWork = currentCullWork+1
             n = check_queue[check_queue_size]
             check_queue_size = check_queue_size - 1
             sx = nx[n]
@@ -187,8 +189,8 @@ function initialize()
                 b = nBucket[n]
                 if b then
                     for i = 1, math.min(#b, math.ceil(focalLength * sr / dist / OPTIMIZATION[6] * #b)) do
-                        triangleDrawBufferSize = triangleDrawBufferSize + 1
-                        triangleDrawBuffer[triangleDrawBufferSize] = b[i]
+                        triangleCullBufferSize = triangleCullBufferSize + 1
+                        triangleCullBuffer[triangleCullBufferSize] = b[i]
                     end
                 else
                     check_queue_size = check_queue_size + 2
@@ -357,8 +359,13 @@ function dt_insert_point(nearVertexID, point)
 
         if dt_isSurface[current_triangle] then
             i = dt_isSurface[current_triangle]
-            triangles.list_remove(i) -- mark invalid triangles of final mesh for removal, i.e. getting overwritten when new are added
-            traingle_balltree.BT_remove(i)
+            triangleDeleteBufferSize1 = triangleDeleteBufferSize1+1
+            triangleDeleteBuffer1[triangleDeleteBufferSize1] = i
+            if ballTreeAddDeleteBuffer[i] then
+                ballTreeAddDeleteBuffer[i] = nil
+            else
+                ballTreeAddDeleteBuffer[i] = false
+            end
         end
 
         dtriangles.list_remove(current_triangle) -- mark invalid triangles for removal, i.e. getting overwritten when new are added
@@ -429,7 +436,7 @@ function dt_insert_point(nearVertexID, point)
             end
 
             t = triangles.list_insert(triangles_buffer)
-            traingle_balltree.BT_insert(t)
+            ballTreeAddDeleteBuffer[t] = true --traingle_balltree.BT_insert(t)
             dt_isSurface[new_triangle] = t
         end
     end
@@ -444,15 +451,7 @@ end
 --    return t_centroidDepth[t1] > t_centroidDepth[t2]
 --end
 
-WorldToScreen_triangles = function()
-    local refreshCurrentFrame, currentTriangle, vertex_id, i
-    refreshCurrentFrame = frameTick % OPTIMIZATION[2] == 0
-
-    if refreshCurrentFrame then
-        frustumCull()
-        debug = #triangleDrawBuffer
-    end
-
+WorldToScreen_triangles = function(currentTriangle, vertex_id, i)
     i = 1
     while i < triangleDrawBufferSize do
         currentTriangle = triangleDrawBuffer[i]
@@ -593,12 +592,52 @@ function onTick()
             end
         end
     end
-end
 
+    refreshCurrentFrame = frameTick % OPTIMIZATION[2] == 0
+
+    if refreshCurrentFrame then
+        for i = 1, triangleDeleteBufferSize2 do
+            triangles.list_remove(triangleDeleteBuffer2[i])
+        end
+        triangleDeleteBuffer2 = triangleDeleteBuffer1
+        triangleDeleteBufferSize2 = triangleDeleteBufferSize1
+        triangleDeleteBuffer1 = {}
+        triangleDeleteBufferSize1 = 0
+
+        for k, v in pairs(ballTreeAddDeleteBuffer) do
+            if v then
+                traingle_balltree.BT_insert(k)
+            else
+                traingle_balltree.BT_remove(k)
+            end
+            ballTreeAddDeleteBuffer[k] = nil
+        end
+
+        preparedCulling = renderOn
+    end
+
+    if renderOn and (refreshCurrentFrame or not preparedCulling) then
+        triangleDrawBuffer = triangleCullBuffer
+        triangleDrawBufferSize = triangleCullBufferSize
+        cull = #triangleDrawBuffer
+
+        triangleCullBuffer = {}
+        triangleCullBufferSize = 0
+        check_queue_size = 1
+        check_queue[1] = traingle_balltree.BT_rootID
+        maxCullWork = #nChild1 // OPTIMIZATION[2] + 100
+    end
+
+    frameTick = frameTick + 1
+end
 
 function onDraw()
     if renderOn then
-        local prevColorHash, drawTri = 0, drawWireframe and screen.drawTriangle or screen.drawTriangleF
+        currentCullWork = 0
+        frustumCull()
+
+        prevColorHash = 0
+        drawTri = drawWireframe and screen.drawTriangle or screen.drawTriangleF
 
         WorldToScreen_triangles()
         for i = 1, triangleDrawBufferSize do
@@ -620,10 +659,6 @@ function onDraw()
     end
 
     screen.setColor(0, 255, 0)
-    screen.drawText(5,5, ("DT/T/View: %i/%i/%i"):format(#dt_v1, #t_v1, #triangleDrawBuffer))
-    screen.drawText(5, 12, "Cull: "..tostring(debug))
-    screen.drawText(5, 20, "MaxDepth: "..traingle_balltree.BT_nodes[9][traingle_balltree.BT_rootID])
+    screen.drawText(5,5, ("T/C/V: %i/%i/%i"):format(#t_v1, cull, #triangleDrawBuffer))
     --screen.drawText(5, 13, ("Pos: %+0.6f / %+0.6f / %+0.6f"):format(cameraPos[1] or 0, cameraPos[2] or 0, cameraPos[3] or 0)) -- debug
-
-    frameTick = frameTick + 1
 end
