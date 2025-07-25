@@ -33,8 +33,8 @@ function multiReadPropertyNumbers(str, t)
 end
 
 -- globally scoped locals
-local v_x, v_y, v_z, v_near_dtriangle, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVisible, v_frame,                          --v shorthand for vertex
-    t_v1, t_v2, t_v3, t_colorR, t_colorG, t_colorB, t_cx, t_cy, t_cz, -- t_centroidDepth,                               --t shorthand for triangle
+local v_x, v_y, v_z, v_near_dtriangle, v_sx, v_sy, v_sz, v_inNearAndFar, v_frame,                                         --v shorthand for vertex
+    t_v1, t_v2, t_v3, t_colorR, t_colorG, t_colorB, t_cx, t_cy, t_cz, -- t_centroidDepth,                                 --t shorthand for triangle
 --    dt_v1, dt_v2, dt_v3, dt_neighbor1, dt_neighbor2, dt_neighbor3, dt_isChecked, dt_isInvalid, dt_isSurface,            --dt shorthand for delaunay triangle
 --    dtriangle_check_queue, invalid_dtriangles, edge_boundary_neighbor, edge_boundary_v1, edge_boundary_v2, edge_shared,
     vertices, vertices_balltree, vertices_buffer, triangles, triangles_buffer, dtriangles, dtriangles_neighbors, dtriangles_buffer,
@@ -44,8 +44,8 @@ local v_x, v_y, v_z, v_near_dtriangle, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVis
     cameraTransform, triangleDrawBuffer,
     pointSub, add_vertex, add_dtriangle, -- functions
     px_cx, px_cy, px_cx_pos, px_cy_pos, frustumPlanes, focalLength,
-    v1, v2, v3,
-    nChild1, nChild2, nx, ny, nz, nr, nBucket, x, y, z, w, X, Y, Z
+    nChild1, nChild2, nx, ny, nz, nr, nBucket,
+    v1, v2, v3
 
 SCREEN, OPTIMIZATION, HMD, pointBuffer, COLOR_WATER, COLOR_GROUND =
     multiReadPropertyNumbers "SCREEN",
@@ -74,6 +74,7 @@ SCREEN, OPTIMIZATION, HMD, pointBuffer, COLOR_WATER, COLOR_GROUND =
 --  [4] MinPointDist
 --  [5] FlatTerrainPointDist
 --  [6] PixelSizeCulling
+--  [7] MinPointAlt
 --}
 
 ---Helper function to reduce chars for arithemetic vector operation
@@ -115,7 +116,7 @@ end
 
 ---initialize or reset state
 function initialize()
-    v_x, v_y, v_z, v_near_dtriangle, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVisible, v_frame,
+    v_x, v_y, v_z, v_near_dtriangle, v_sx, v_sy, v_sz, v_inNearAndFar, v_frame,
     t_v1, t_v2, t_v3, t_colorR, t_colorG, t_colorB, t_cx, t_cy, t_cz, -- t_centroidDepth,
     dt_v1, dt_v2, dt_v3, dt_neighbor1, dt_neighbor2, dt_neighbor3, dt_isChecked, dt_isInvalid, dt_isSurface,
     dtriangle_check_queue, invalid_dtriangles, edge_boundary_neighbor, edge_boundary_v1, edge_boundary_v2, edge_shared,
@@ -125,9 +126,9 @@ function initialize()
 
     frustumPlanes = {fPlaneRight, fPlaneLeft, fPlaneBottom, fPlaneTop, fPlaneBack, fPlaneFront}
 
-    vertices = list{v_x, v_y, v_z, v_near_dtriangle, v_sx, v_sy, v_sz, v_inNearAndFar, v_isVisible, v_frame}
+    vertices = list{v_x, v_y, v_z, v_near_dtriangle, v_sx, v_sy, v_sz, v_inNearAndFar, v_frame}
     vertices_balltree = BallTree3D(v_x, v_y, v_z)
-    vertices_buffer = {0,0,0, 1, 0,0,0, false,false,0}
+    vertices_buffer = {0,0,0, 1, 0,0,0, false,0}
 
     triangles = list{t_v1, t_v2, t_v3, t_colorR, t_colorG, t_colorB, t_cx, t_cy, t_cz} -- ,t_centroidDepth}
     triangles_buffer = {0,0,0, 0,0,0, 0,0,0} --,0}
@@ -148,6 +149,8 @@ function initialize()
     triangleDeleteBufferSize2 = 0
     cull = 0
     triangleCullBufferSize = 0
+    maxCullWork = 0
+    sumOfCullWork = 0
 
     -- init super-triangle, roughly covers the playable area with islands
     add_vertex(-9E5, 0, -9E5)
@@ -426,7 +429,7 @@ function dt_insert_point(nearVertexID, point)
             t = math.min(cdy / magnitude, 0.99) * (#c/3-1)
             shade = (cdx * 0.28 + cdy * 0.96) / magnitude
             i = math.floor(t)
-            t = t - i
+            t = (t - i)^2
             inv_t = 1-t
 
             for j = 1, 3 do
@@ -454,10 +457,17 @@ end
 --    return t_centroidDepth[t1] > t_centroidDepth[t2]
 --end
 
-WorldToScreen_triangles = function(currentTriangle, vertex_id, i)
+WorldToScreen_triangles = function()
+    local m1,  m2,  m3,  m4,
+        m5,  m6,  m7,  m8,
+        m9,  m10, m11, m12,
+        m13, m14, m15, m16,
+        currentTriangle, vertex_id, inView, i, z, w, X, Y, Z = table.unpack(cameraTransform)
+
     i = 1
-    while i < triangleDrawBufferSize do
+    while i <= triangleDrawBufferSize do
         currentTriangle = triangleDrawBuffer[i]
+        inView = true
 
         for j = 1, 3 do
             vertex_id = triangles[j][currentTriangle]
@@ -469,50 +479,55 @@ WorldToScreen_triangles = function(currentTriangle, vertex_id, i)
                 Y = v_y[vertex_id]
                 Z = v_z[vertex_id]
 
-                x = cameraTransform[1]*X + cameraTransform[5]*Y + cameraTransform[9 ]*Z + cameraTransform[13]
-                y = cameraTransform[2]*X + cameraTransform[6]*Y + cameraTransform[10]*Z + cameraTransform[14]
-                z = cameraTransform[3]*X + cameraTransform[7]*Y + cameraTransform[11]*Z + cameraTransform[15]
-                w = cameraTransform[4]*X + cameraTransform[8]*Y + cameraTransform[12]*Z + cameraTransform[16]
+                --x = m1*X + m5*Y + m9 *Z + m13
+                --y = m2*X + m6*Y + m10*Z + m14
+                z = m3*X + m7*Y + m11*Z + m15
+                w = m4*X + m8*Y + m12*Z + m16
 
-                v_inNearAndFar[vertex_id] = 0<=z and z<=w
-                if v_inNearAndFar[vertex_id] then -- Is vertex between near and far plane
-                    v_isVisible[vertex_id] = -w<=x and x<=w  and  -w<=y and y<=w -- Is vertex in frustum (excluded near and far plane test)
+                inView = 0<=z and z<=w
+                v_inNearAndFar[vertex_id] = inView
+                if inView then -- Is vertex between near and far plane
+                    --v_isVisible[vertex_id] = -w<=x and x<=w  and  -w<=y and y<=w -- Is vertex in frustum (excluded near and far plane test), commented out as balltree frustum culling is good enough
 
-                    w = 1/w
-                    v_sx[vertex_id] = x*w*px_cx + px_cx_pos
-                    v_sy[vertex_id] = y*w*px_cy + px_cy_pos
-                    v_sz[vertex_id] = z*w
+                    v_sx[vertex_id] = (m1*X + m5*Y + m9 *Z + m13)/w*px_cx + px_cx_pos
+                    v_sy[vertex_id] = (m2*X + m6*Y + m10*Z + m14)/w*px_cy + px_cy_pos
+                    --v_sz[vertex_id] = z/w
                 else
                     break
                 end
+            elseif not v_inNearAndFar[vertex_id] then
+                inView = false
+                break
             end
         end
 
-        v1 = t_v1[currentTriangle]
-        v2 = t_v2[currentTriangle]
-        v3 = t_v3[currentTriangle]
-        if -- (Most average cases) determining if triangle is visible / should be rendered
-            v_inNearAndFar[v1] and v_inNearAndFar[v2] and v_inNearAndFar[v3]                                                                -- Are all vertices within near and far plane
-            and (v_isVisible[v1] or v_isVisible[v2] or v_isVisible[v3])                                                                     -- and atleast 1 visible in frustum
-            and (v_sx[v1]*v_sy[v2] - v_sx[v2]*v_sy[v1] + v_sx[v2]*v_sy[v3] - v_sx[v3]*v_sy[v2] + v_sx[v3]*v_sy[v1] - v_sx[v1]*v_sy[v3] > 0) -- and is the triangle facing the camera (backface culling CCW. Flip '>' for CW. Can be removed if triangles aren't consistently ordered CCW/CW)
-        then
-            --t_centroidDepth[currentTriangle] = v_sz[v1] + v_sz[v2] + v_sz[v3] -- centroid depth for sort
+        if inView then
             i = i + 1
-        else -- remove
-            triangleDrawBuffer[i] = table.remove(triangleDrawBuffer)
+        else
+            triangleDrawBuffer[i] = triangleDrawBuffer[triangleDrawBufferSize]
+            triangleDrawBuffer[triangleDrawBufferSize] = nil
             triangleDrawBufferSize = triangleDrawBufferSize - 1
         end
     end
 
-    --if refreshCurrentFrame then
-    --    table.sort(triangleDrawBuffer, WorldToScreen_triangles_sortFunction) -- painter's algorithm | triangle centroid depth sort
+    --if refreshCurrentFrame then -- decided to not do backface culling since removing depth sort and made triangles transparent
+    --    v1 = t_v1[currentTriangle]
+    --    v2 = t_v2[currentTriangle]
+    --    v3 = t_v3[currentTriangle]
+    --
+    --    if (v_sx[v1]*v_sy[v2] - v_sx[v2]*v_sy[v1] + v_sx[v2]*v_sy[v3] - v_sx[v3]*v_sy[v2] + v_sx[v3]*v_sy[v1] - v_sx[v1]*v_sy[v3] < 0) then
+    --        triangleDrawBuffer[i] = triangleDrawBuffer[triangleDrawBufferSize]
+    --        triangleDrawBuffer[triangleDrawBufferSize] = nil
+    --        triangleDrawBufferSize = triangleDrawBufferSize - 1
+    --    end
     --end
 
-    if OPTIMIZATION[1] < #triangleDrawBuffer then
-        for j = 1, #triangleDrawBuffer-OPTIMIZATION[1] do
-            triangleDrawBuffer[j*2 % OPTIMIZATION[1]] = triangleDrawBuffer[OPTIMIZATION[1]+j]
+    i = OPTIMIZATION[1] -- MaxDrawnTriangles
+    if i < #triangleDrawBuffer then
+        for j = 1, #triangleDrawBuffer-i do
+            triangleDrawBuffer[j*2 % i] = triangleDrawBuffer[i+j]
         end
-        for j = OPTIMIZATION[1]+1, #triangleDrawBuffer do
+        for j = i+1, #triangleDrawBuffer do
             triangleDrawBuffer[j] = nil
         end
     end
@@ -583,14 +598,14 @@ function onTick()
 
     for i = 17, 29, 3 do -- read composite range [17;31], i.e. laser endpoint positions
         pointBuffer[1] = input.getNumber(i)
-        pointBuffer[2] = input.getNumber(i+1)
+        pointBuffer[2] = math.max(input.getNumber(i+1), OPTIMIZATION[7])
         pointBuffer[3] = input.getNumber(i+2)
 
         if pointBuffer[1] ~= 0 and pointBuffer[2] ~= 0 then
-            dist2, nearVertexID = vertices_balltree.BT_nnSearch(pointBuffer[1], pointBuffer[2], pointBuffer[3])
-            z = 1 + math.abs(pointBuffer[2] - v_y[nearVertexID])
+            dist, nearVertexID = vertices_balltree.BT_nnSearch(table.unpack(pointBuffer))
+            dy = OPTIMIZATION[5] - (pointBuffer[2] - v_y[nearVertexID])^2
 
-            if dist2 > math.max(OPTIMIZATION[4], OPTIMIZATION[5] / z) then
+            if dist > math.max(OPTIMIZATION[4], (v_y[nearVertexID] > 0 and 0 > pointBuffer[2] or pointBuffer[2] > 0 and 0 > v_y[nearVertexID]) and 1 or dy) then
                 dt_insert_point(nearVertexID, pointBuffer)
             end
         end
@@ -628,16 +643,18 @@ function onTick()
         triangleCullBufferSize = 0
         check_queue_size = 1
         check_queue[1] = traingle_balltree.BT_rootID
-        maxCullWork = #nChild1 // OPTIMIZATION[2] + 100
+        maxCullWork = 9 + (preparedCulling and (0.6 * maxCullWork +  0.4 * sumOfCullWork // OPTIMIZATION[2]) or (#nChild1 // OPTIMIZATION[2]))//1
+        sumOfCullWork = 0
     end
 
     frameTick = frameTick + 1
 end
 
-function onDraw()
+function onDraw(drawTri, colorHash, prevColorHash)
     if renderOn then
         currentCullWork = 0
         frustumCull()
+        sumOfCullWork = sumOfCullWork + currentCullWork
 
         prevColorHash = 0
         drawTri = drawWireframe and screen.drawTriangle or screen.drawTriangleF
@@ -649,7 +666,7 @@ function onDraw()
             v2 = t_v2[i]
             v3 = t_v3[i]
 
-            colorHash = t_colorR[i]//20 << 16  |  t_colorG[i]//20 << 8  |  t_colorB[i]//20
+            colorHash = t_colorR[i]//16 << 16  |  t_colorG[i]//16 << 8  |  t_colorB[i]//16
             if prevColorHash ~= colorHash then
                 prevColorHash = colorHash
                 screen.setColor(t_colorR[i], t_colorG[i], t_colorB[i], color_alpha) -- setColor is roughly as expensive to call as drawTriangle
@@ -662,6 +679,6 @@ function onDraw()
     end
 
     screen.setColor(0, 255, 0)
-    screen.drawText(5,5, ("T/C/V: %i/%i/%i"):format(#t_v1, cull, #triangleDrawBuffer))
+    screen.drawText(5,5, ("T/C/V: %i/%i/%i/%i"):format(#t_v1, cull, #triangleDrawBuffer, maxCullWork))
     --screen.drawText(5, 13, ("Pos: %+0.6f / %+0.6f / %+0.6f"):format(cameraPos[1] or 0, cameraPos[2] or 0, cameraPos[3] or 0)) -- debug
 end
