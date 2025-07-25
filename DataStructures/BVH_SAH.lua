@@ -26,7 +26,7 @@ end
 
 
 require("DataStructures.JL_list")
-require("newTables")
+require("Utility.newTables")
 
 ---@section BVH_AABB 1 _BVH_AABB_
 ---@class BoundingVolumeHierarchyAABB

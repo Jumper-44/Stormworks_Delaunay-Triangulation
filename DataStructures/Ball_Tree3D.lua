@@ -31,7 +31,7 @@ end
 --[====[ IN-GAME CODE ]====]
 
 require("DataStructures.JL_list")
-require("newTables")
+require("Utility.newTables")
 
 
 ---@section BallTree3D 1 _BALL_TREE_

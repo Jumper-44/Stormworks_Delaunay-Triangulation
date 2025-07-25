@@ -54,27 +54,8 @@ end
 -- https://github.com/Jumper-44/Stormworks_JumperLib
 require('JumperLib.JL_general')
 require('JumperLib.Math.JL_matrix_transformations') -- also includes JumperLib.Math.JL_matrix_operations and JumperLib.Math.JL_vector_operations
+require("Utility.propertyToTable")
 
-
----@param str string
----@param t table
----@overload fun(str: string):table
-function strToNumbers(str, t)
-    t = t and t or {}
-    for w in property.getText(str):gmatch"[+%w.-]+" do
-        t[#t+1] = tonumber(w)
-    end
-    return t
-end
-
----@param str string
----@param t table
-function multiReadPropertyNumbers(str, t)
-    for w in property.getText(str):gmatch"[^!]+" do
-        strToNumbers(w, t)
-    end
-    return t
-end
 
 local position, linearVelocity, angle, angularVelocity, head_position_offset, cameraTranslation, tempVec1_3d, tempVec2_3d = {}, {}, {}, {}, {}, {}, {}, {}
 local renderOn, OFFSET = false, {}
@@ -98,7 +79,7 @@ local tempMatrix1_3x3, tempMatrix2_3x3, tempMatrix1_4x4, tempMatrix2_4x4, transl
 --  [9]  pxOffsetX      -- Pixel offset on screen, not applied to HMD
 --  [10] pxOffsety      -- Pixel offset on screen, not applied to HMD
 --}
-local SCREEN = multiReadPropertyNumbers("SCREEN", {})
+local SCREEN = multiReadPropertyNumbers "SCREEN"
 SCREEN.n = SCREEN[3] + 0.635
 SCREEN.f = SCREEN[4]
 SCREEN.r = SCREEN[5]/2  + SCREEN[7]

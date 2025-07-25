@@ -7,30 +7,12 @@
 
 -- require https://github.com/Jumper-44/Stormworks_JumperLib
 require("DataStructures.JL_list") -- list{}, main point of this is to initialize and organize multiple tables in array and not hashmap part
-require("newTables") -- helper function that returns *n* new tables by 'newTables{n}' -> '{}, {}, ...n'
+require("Utility.newTables") -- helper function that returns *n* new tables by 'newTables{n}' -> '{}, {}, ...n'
+require("Utility.propertyToTable")
 require("DataStructures.Ball_Tree3D")
 
 
----@param str string
----@param t table|nil
----@overload fun(str: string):table
-function strToNumbers(str, t)
-    t = t and t or {}
-    for w in property.getText(str):gmatch"[+%w.-]+" do
-        t[#t+1] = tonumber(w)
-    end
-    return t
-end
 
----@param str string
----@param t any local variable
-function multiReadPropertyNumbers(str, t)
-    t = {}
-    for w in property.getText(str):gmatch"[^!]+" do
-        strToNumbers(w, t)
-    end
-    return t
-end
 
 -- globally scoped locals
 local v_x, v_y, v_z, v_near_dtriangle, v_sx, v_sy, v_sz, v_inNearAndFar, v_frame,                                         --v shorthand for vertex
