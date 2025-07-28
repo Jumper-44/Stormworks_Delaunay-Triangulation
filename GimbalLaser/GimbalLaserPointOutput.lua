@@ -8,14 +8,57 @@
 
 require("GimbalLaser.GimbalLaserSharedSync")
 
+local outSetNum = output.setNumber
+local bufX, bufY, bufZ = {}, {}, {}
+local bufStart, bufEnd, bufSize = 1, 1, 0 -- OUTPUT_BUFFER_SIZE
+
+local function isBufferFull()
+    return bufSize == OUTPUT_BUFFER_SIZE
+end
+
+local function bufferAdd(p)
+--    if bufSize < OUTPUT_BUFFER_SIZE then
+    bufEnd = bufEnd % OUTPUT_BUFFER_SIZE + 1
+    bufSize = bufSize + 1
+
+    bufX[bufEnd] = p[1]
+    bufY[bufEnd] = p[2]
+    bufZ[bufEnd] = p[3]
+--        return true
+--    end
+--    return false
+end
+
+local function bufferPopToOutput(i)
+    if bufSize > 0 then
+        outSetNum(i,     bufX[bufStart])
+        outSetNum(i + 1, bufY[bufStart])
+        outSetNum(i + 2, bufZ[bufStart])
+
+        bufStart = bufStart % OUTPUT_BUFFER_SIZE + 1
+        bufSize = bufSize - 1
+    else
+        outSetNum(i,     0)
+        outSetNum(i + 1, 0)
+        outSetNum(i + 2, 0)
+    end
+end
+
 
 local position, angle, rotationMatrixZYX = vec_init3d(), vec_init3d(), matrix_init(3, 3)
 local temp1Vec3d, temp2Vec3d = vec_init3d(), vec_init3d()
+
 local TURN_TO_RAD = math.pi / 4
-local outSetNum = output.setNumber
+local ACTIVE_OUTPUTS = POINT_OUTPUT_AMOUNT*3 - 2
+
 
 function onTick()
     onTickInputUpdate()
+
+    if isResetOn then
+        bufStart = 1
+        bufEnd = 1
+    end
 
     if isLaserScanOn then
         vec_init3d(position, getNumber3(1, 2, 3))
@@ -23,14 +66,16 @@ function onTick()
         matrix_getRotZYX(angle[1], angle[2], angle[3], rotationMatrixZYX)
 
         for i = 1, LASER_AMOUNT do
+            if isBufferFull() then
+                break
+            end
+
             local laser_distance = input.getNumber(6 + i)
-            local laser_xyz_output = laser_endpoint_xyz[i]
 
             if laser_distance > LASER_MIN_RANGE[i] and laser_distance < 4000 and laser_xy_pivotBuffer[i].x[laser_xy_pivotBufferIndex] then
-                local rY, rX, dist
-                rY = laser_xy_pivotBuffer[i].x[laser_xy_pivotBufferIndex] * TURN_TO_RAD
-                rX = laser_xy_pivotBuffer[i].y[laser_xy_pivotBufferIndex] * TURN_TO_RAD
-                dist = math.cos(rX) * laser_distance
+                local rY = laser_xy_pivotBuffer[i].x[laser_xy_pivotBufferIndex] * TURN_TO_RAD
+                local rX = laser_xy_pivotBuffer[i].y[laser_xy_pivotBufferIndex] * TURN_TO_RAD
+                local dist = math.cos(rX) * laser_distance
 
                 -- calc laser endpoint xyz
                 vec_add( -- Add physics block position
@@ -52,18 +97,16 @@ function onTick()
                         ),
                         temp1Vec3d -- return
                     ),
-                    laser_xyz_output -- return
+                    temp1Vec3d -- return
                 )
 
-            else
-                vec_init3d(laser_xyz_output) -- Set xyz to 0
+                bufferAdd(temp1Vec3d)
             end
-
-            local offset = (i - 1) * 3
-            outSetNum(offset + 1, laser_xyz_output[1])
-            outSetNum(offset + 2, laser_xyz_output[2])
-            outSetNum(offset + 3, laser_xyz_output[3])
         end
+    end
+
+    for i = 1, ACTIVE_OUTPUTS, 3 do
+        bufferPopToOutput(i)
     end
 
     onTickScanUpdate()
