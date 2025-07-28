@@ -16,10 +16,12 @@ require('JumperLib.Math.JL_matrix_transformations')
 require('JumperLib.JL_general')
 require('Utility.propertyToTable')
 
+local laser_xy_pivotBuffer, laser_xy_pivotBufferIndex, tick,
+    LASER_AMOUNT, TICK_DELAY, POINT_OUTPUT_AMOUNT, OUTPUT_BUFFER_SIZE,
+    OFFSET_GPS_TO_LASER, LASER_ORIENTAION_MATRIX, LASER_MIN_RANGE, isLaserScanOn, isResetOn
 
 laser_xy_pivotBuffer = {}
 laser_xy_pivotBufferIndex = 1
-laser_endpoint_xyz = {}
 
 LASER_AMOUNT, TICK_DELAY, POINT_OUTPUT_AMOUNT, OUTPUT_BUFFER_SIZE = table.unpack(strToNumbers "LaserSum, tickDelay, PointOUTSum, OutBufferSize")
 
@@ -58,14 +60,13 @@ do
             ly[j] = false
         end
         laser_xy_pivotBuffer[i] = { x = lx, y = ly }
-        laser_endpoint_xyz[i] = vec_init3d()
 
         local l, r, b, t = table.unpack(laser_config, 10, 13)
         LASER_SPREAD_RANGE[i] = {
-            (r+l)/2 - 0.5,  -- xOffset
-            r-l,            -- xScale
-            (t+b)/2 - 0.5,  -- yOffset
-            t-b             -- yScale
+            (r+l)/2,  -- xOffset
+            r-l,      -- xScale
+            (t+b)/2,  -- yOffset
+            t-b       -- yScale
         }
 
         LASER_MIN_RANGE[i] = laser_config[14]
@@ -73,19 +74,21 @@ do
 
 
 
-    --local PHI = (1 + 5^0.5) / 2
-    local TIME_STEP = 1 --PHI / 10
-    local LASER_TIME_STEP = 1 --TIME_STEP / LASER_AMOUNT
+    local PHI = (1 + 5^0.5) / 2
+    local PHI2 = PHI*PHI
+    local TIME_STEP = PHI / 10
+    local LASER_TIME_STEP = TIME_STEP / LASER_AMOUNT
 
     function laserScan(time, xOffset, xScale, yOffset, yScale)
-        --local angle = tau * (PHI * time % 1 - 0.5)
-        --local radius = LASER_SPREAD_MULTIPLIER * (tau * time % 1 - 0.5)
-        --return radius * math.cos(angle), radius * math.sin(angle)
+        local t = PHI * time % 1
+        local x = t - 0.5
+        local y = (PHI2 * time) % 1 - 0.5
+        return xOffset + xScale * x, yOffset + yScale * y
 
-        math.randomseed(math.floor(time))
-        local x = (math.random() + xOffset) * xScale
-        local y = (math.random() + yOffset) * yScale
-        return clamp(x, -1, 1), clamp(y, -1, 1)
+        --math.randomseed(math.floor(time))
+        --local x = (math.random() + xOffset) * xScale
+        --local y = (math.random() + yOffset) * yScale
+        --return x, y
     end
 
 
