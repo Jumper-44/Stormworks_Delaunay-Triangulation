@@ -12,6 +12,7 @@ require("GimbalLaser.GimbalLaserSharedSync")
 local position, angle, rotationMatrixZYX = vec_init3d(), vec_init3d(), matrix_init(3, 3)
 local temp1Vec3d, temp2Vec3d = vec_init3d(), vec_init3d()
 local TURN_TO_RAD = math.pi / 4
+local outSetNum = output.setNumber
 
 function onTick()
     onTickInputUpdate()
@@ -59,9 +60,9 @@ function onTick()
             end
 
             local offset = (i - 1) * 3
-            output.setNumber(offset + 1, laser_xyz_output[1])
-            output.setNumber(offset + 2, laser_xyz_output[2])
-            output.setNumber(offset + 3, laser_xyz_output[3])
+            outSetNum(offset + 1, laser_xyz_output[1])
+            outSetNum(offset + 2, laser_xyz_output[2])
+            outSetNum(offset + 3, laser_xyz_output[3])
         end
     end
 

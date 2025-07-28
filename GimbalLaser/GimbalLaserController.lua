@@ -9,20 +9,23 @@
 require("GimbalLaser.GimbalLaserSharedSync")
 
 local ACTIVE_OUTPUTS = LASER_AMOUNT*2
+local outSetNum = output.setNumber
 
 function onTick()
     onTickInputUpdate()
     onTickScanUpdate()
 
     if isLaserScanOn then
+        local offset, currentPivot
         for i = 1, LASER_AMOUNT do
-            local offset = (i - 1) * 2
-            output.setNumber(offset + 1, laser_xy_pivotBuffer[i].x[laser_xy_pivotBufferIndex])
-            output.setNumber(offset + 2, laser_xy_pivotBuffer[i].y[laser_xy_pivotBufferIndex])
+            offset = (i - 1) * 2
+            currentPivot = laser_xy_pivotBuffer[i]
+            outSetNum(offset + 1, currentPivot.x[laser_xy_pivotBufferIndex])
+            outSetNum(offset + 2, currentPivot.y[laser_xy_pivotBufferIndex])
         end
     else
         for i = 1, ACTIVE_OUTPUTS do
-            output.setNumber(i, 0)
+            outSetNum(i, 0)
         end
     end
 end
