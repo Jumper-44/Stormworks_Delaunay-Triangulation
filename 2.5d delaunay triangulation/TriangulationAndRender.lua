@@ -30,8 +30,8 @@ local v_x, v_y, v_z, v_near_dtriangle, v_sx, v_sy, v_sz, v_inNearAndFar, v_frame
     v1, v2, v3
 
 SCREEN, OPTIMIZATION, HMD, pointBuffer, COLOR_WATER, COLOR_GROUND =
-    multiReadPropertyNumbers "SCREEN",
-    multiReadPropertyNumbers "OPT",
+    multiReadPropertyNumbers "S",
+    multiReadPropertyNumbers "O",
     strToNumbers "HMD",  --{256, 192, 128, 96, 128, 96, -345.6}, -- {width, height, width/2, height/2, width/2, height/2, -height/math.tan(1.014197/2)}
     {0,0,0},
     strToNumbers "CW", strToNumbers "CG"
@@ -410,14 +410,14 @@ function dt_insert_point(nearVertexID, point)
 
             t = math.min(cdy / magnitude, 0.99) * (#c/3-1)
             shade = (cdx * 0.28 + cdy * 0.96) / magnitude
-            i = math.floor(t)
+            i = t // 1
             t = (t - i)^2
             inv_t = 1-t
 
             for j = 1, 3 do
                 triangles_buffer[j] = dtriangles[j][new_triangle]
                 index = 3*i+j
-                triangles_buffer[j+3] = (c[index]*inv_t + c[index+3]*t) * shade
+                triangles_buffer[j+3] = (c[index]*inv_t + c[index+3]*t) * shade // 1
 
                 vt = vertices[j]
                 triangles_buffer[j+6] = (vt[v1] + vt[v2] + vt[v3])/3
@@ -506,8 +506,8 @@ WorldToScreen_triangles = function()
 
     i = OPTIMIZATION[1] -- MaxDrawnTriangles
     if i < #triangleDrawBuffer then
-        for j = 1, #triangleDrawBuffer-i do
-            triangleDrawBuffer[j*2 % i] = triangleDrawBuffer[i+j]
+        for j = 1, (#triangleDrawBuffer-i)//2, 2 do
+            triangleDrawBuffer[j % i] = triangleDrawBuffer[i+j*2]
         end
         for j = i+1, #triangleDrawBuffer do
             triangleDrawBuffer[j] = nil
@@ -516,6 +516,7 @@ WorldToScreen_triangles = function()
     triangleDrawBufferSize = #triangleDrawBuffer
 end
 
+workSplit = OPTIMIZATION[2] < 2 and 1 or OPTIMIZATION[2]-1
 function onTick()
     renderOn = input.getBool(1)
 
@@ -525,7 +526,8 @@ function onTick()
 
     drawWireframe = input.getBool(4)
 
-    if input.getBool(5) then -- is head mounted display (HMD)?
+    isHMD = input.getBool(5)
+    if isHMD then -- is head mounted display (HMD)?
         width, height, px_cx, px_cy, px_cx_pos, px_cy_pos, focalLength = table.unpack(HMD)
     else
         width  = SCREEN[1]
@@ -536,6 +538,7 @@ function onTick()
         px_cy_pos = px_cy + SCREEN[10]
         focalLength = -(SCREEN[3] + 0.635) / SCREEN[6] * height -- -(n / (t - b)) * screen_height
     end
+    autoSwitchHMD = input.getBool(6)
 
     if renderOn then
         for i = 1, 16 do
@@ -572,10 +575,7 @@ function onTick()
         --cameraPos[2] = (d1*B - a1*D + c1*F) / d3
         --cameraPos[3] = (d1*C - a1*E - b1*F) / d3
 
-        color_alpha = 0
-        for i = 25, 32 do
-            color_alpha = color_alpha << 1 | (input.getBool(i) and 1 or 0)
-        end
+        color_alpha = input.getNumber(32)
     end
 
     for i = 17, 29, 3 do -- read composite range [17;31], i.e. laser endpoint positions
@@ -625,7 +625,7 @@ function onTick()
         triangleCullBufferSize = 0
         check_queue_size = 1
         check_queue[1] = traingle_balltree.BT_rootID
-        maxCullWork = 9 + (preparedCulling and (0.6 * maxCullWork +  0.4 * sumOfCullWork // OPTIMIZATION[2]) or (#nChild1 // OPTIMIZATION[2]))//1
+        maxCullWork = 9 + (preparedCulling and (0.3 * maxCullWork +  0.7 * sumOfCullWork // workSplit) or (#nChild1 // workSplit))//1
         sumOfCullWork = 0
     end
 
@@ -633,7 +633,8 @@ function onTick()
 end
 
 function onDraw(drawTri, colorHash, prevColorHash)
-    if renderOn then
+    screenIsHMD = screen.getWidth() == HMD[1] and screen.getHeight() == HMD[2]
+    if renderOn and (not autoSwitchHMD or (isHMD and screenIsHMD) or not isHMD and not screenIsHMD) then
         currentCullWork = 0
         frustumCull()
         sumOfCullWork = sumOfCullWork + currentCullWork
@@ -648,7 +649,7 @@ function onDraw(drawTri, colorHash, prevColorHash)
             v2 = t_v2[i]
             v3 = t_v3[i]
 
-            colorHash = t_colorR[i]//16 << 16  |  t_colorG[i]//16 << 8  |  t_colorB[i]//16
+            colorHash = (t_colorR[i]&15) << 16  |  (t_colorG[i]&15) << 8  |  t_colorB[i]&15
             if prevColorHash ~= colorHash then
                 prevColorHash = colorHash
                 screen.setColor(t_colorR[i], t_colorG[i], t_colorB[i], color_alpha) -- setColor is roughly as expensive to call as drawTriangle
@@ -656,11 +657,8 @@ function onDraw(drawTri, colorHash, prevColorHash)
 
             drawTri(v_sx[v1], v_sy[v1], v_sx[v2], v_sy[v2], v_sx[v3], v_sy[v3])
         end
-        --screen.setColor(0, 0, 0, color_alpha)
-        --screen.drawRectF(0, 0, width, height)
-    end
 
-    screen.setColor(0, 255, 0)
-    screen.drawText(5,5, ("T/C/V: %i/%i/%i/%i"):format(#t_v1, cull, #triangleDrawBuffer, maxCullWork))
-    --screen.drawText(5, 13, ("Pos: %+0.6f / %+0.6f / %+0.6f"):format(cameraPos[1] or 0, cameraPos[2] or 0, cameraPos[3] or 0)) -- debug
+        screen.setColor(0, 255, 0)
+        screen.drawText(2, 2, #t_v1.."/"..#triangleDrawBuffer) -- ("T/C/V: %i/%i/%i"):format(#t_v1, cull, #triangleDrawBuffer))
+    end
 end
