@@ -8,9 +8,12 @@
 
 require("GimbalLaser.GimbalLaserSharedSync")
 
+require("DataStructures.IKDTREE")
+
+
 local outSetNum = output.setNumber
 local bufX, bufY, bufZ = {}, {}, {}
-local bufStart, bufEnd, bufSize = 1, 1, 0 -- OUTPUT_BUFFER_SIZE
+local bufStart, bufEnd, bufSize
 
 local function isBufferFull()
     return bufSize == OUTPUT_BUFFER_SIZE
@@ -51,13 +54,28 @@ local temp1Vec3d, temp2Vec3d = vec_init3d(), vec_init3d()
 local TURN_TO_RAD = math.pi / 4
 local ACTIVE_OUTPUTS = POINT_OUTPUT_AMOUNT*3 - 2
 
+local px, py, pz
+local points
+local minPointDist = property.getNumber("MinPointDist")
+
+local function init()
+    bufStart = 1
+    bufEnd = 0
+    bufSize = 0
+
+    px = {}
+    py = {}
+    pz = {}
+    points = list{px, py, pz}
+    IKDTree(points, 3)
+end
+init()
 
 function onTick()
     onTickInputUpdate()
 
     if isResetOn then
-        bufStart = 1
-        bufEnd = 1
+        init()
     end
 
     if isLaserScanOn then
@@ -100,7 +118,11 @@ function onTick()
                     temp1Vec3d -- return
                 )
 
-                bufferAdd(temp1Vec3d)
+                local p, dist2 = points.IKDTree_nearestNeighbor(temp1Vec3d)
+                if dist2^0.5 >= minPointDist then
+                    points.IKDTree_insert(points.list_insert(temp1Vec3d))
+                    bufferAdd(temp1Vec3d)
+                end
             end
         end
     end
