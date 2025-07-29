@@ -34,7 +34,7 @@ SCREEN, OPTIMIZATION, HMD, pointBuffer, COLOR_WATER, COLOR_GROUND =
     multiReadPropertyNumbers "O",
     strToNumbers "HMD",  --{256, 192, 128, 96, 128, 96, -345.6}, -- {width, height, width/2, height/2, width/2, height/2, -height/math.tan(1.014197/2)}
     {0,0,0},
-    strToNumbers "CW", strToNumbers "CG"
+    strToNumbers "W", strToNumbers "G"
 
 --local SCREEN = {
 --  [1]  w              -- Pixel width of screen
@@ -538,7 +538,7 @@ function onTick()
         px_cy_pos = px_cy + SCREEN[10]
         focalLength = -(SCREEN[3] + 0.635) / SCREEN[6] * height -- -(n / (t - b)) * screen_height
     end
-    autoSwitchHMD = input.getBool(6)
+    noAutoSwitchHMD = input.getBool(6)
 
     if renderOn then
         for i = 1, 16 do
@@ -585,9 +585,10 @@ function onTick()
 
         if pointBuffer[1] ~= 0 and pointBuffer[2] ~= 0 then
             dist, nearVertexID = vertices_balltree.BT_nnSearch(table.unpack(pointBuffer))
-            dy = OPTIMIZATION[5] - (pointBuffer[2] - v_y[nearVertexID])^2
+            dy = pointBuffer[2] - v_y[nearVertexID]
+            dy = dy^2 + 1
 
-            if dist > math.max(OPTIMIZATION[4], (v_y[nearVertexID] > 0 and 0 > pointBuffer[2] or pointBuffer[2] > 0 and 0 > v_y[nearVertexID]) and 1 or dy) then
+            if dist > math.max(OPTIMIZATION[4], (v_y[nearVertexID] > 0 and 0 > pointBuffer[2] or pointBuffer[2] > 0 and 0 > v_y[nearVertexID]) and 0 or OPTIMIZATION[5] - dy^2) then
                 dt_insert_point(nearVertexID, pointBuffer)
             end
         end
@@ -634,7 +635,7 @@ end
 
 function onDraw(drawTri, colorHash, prevColorHash)
     screenIsHMD = screen.getWidth() == HMD[1] and screen.getHeight() == HMD[2]
-    if renderOn and (not autoSwitchHMD or (isHMD and screenIsHMD) or not isHMD and not screenIsHMD) then
+    if renderOn and (noAutoSwitchHMD or (isHMD and screenIsHMD) or not isHMD and not screenIsHMD) then
         currentCullWork = 0
         frustumCull()
         sumOfCullWork = sumOfCullWork + currentCullWork
