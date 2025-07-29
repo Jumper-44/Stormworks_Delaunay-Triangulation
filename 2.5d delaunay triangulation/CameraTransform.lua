@@ -18,16 +18,6 @@ do
     ---@type Simulator -- Set properties and screen sizes here - will run once when the script is loaded
     simulator = simulator
     simulator:setScreen(1, "3x3")
-    simulator:setProperty("Screen Config", "w, h!near, far!sizeX|Y!posOffsetX|Y!pxOffsetX|Y")
-    simulator:setProperty("w, h", "160, 160")
-    simulator:setProperty("near, far", "0, 25")
-    simulator:setProperty("sizeX|Y", "0.71, 0.71")
-    simulator:setProperty("posOffsetX|Y", "0, 0.01")
-    simulator:setProperty("pxOffsetX|Y", "0, 0")
-
-    simulator:setProperty("GPS_to_camera", "0, 0, 0")
-    simulator:setProperty("PhysicsTick", 0)
-    simulator:setProperty("SeatTick", 0)
 
     -- Runs every tick just before onTick; allows you to simulate the inputs changing
     ---@param simulator Simulator Use simulator:<function>() to set inputs etc.
@@ -79,7 +69,7 @@ local tempMatrix1_3x3, tempMatrix2_3x3, tempMatrix1_4x4, tempMatrix2_4x4, transl
 --  [9]  pxOffsetX      -- Pixel offset on screen, not applied to HMD
 --  [10] pxOffsety      -- Pixel offset on screen, not applied to HMD
 --}
-local SCREEN = multiReadPropertyNumbers "SCREEN"
+local SCREEN = multiReadPropertyNumbers "S"
 SCREEN.n = SCREEN[3] + 0.635
 SCREEN.f = SCREEN[4]
 SCREEN.r = SCREEN[5]/2  + SCREEN[7]
