@@ -3,7 +3,8 @@
     "lifeboatapi.stormworks.isAddonProject": false,
     "Lua.diagnostics.disable": [
         "lowercase-global",
-        "undefined-doc-name"
+        "undefined-doc-name",
+        "need-check-nil"
     ],
     "Lua.diagnostics.globals": [
         "__simulator",
